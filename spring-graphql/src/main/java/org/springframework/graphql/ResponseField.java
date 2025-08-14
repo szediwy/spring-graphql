@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,9 @@ package org.springframework.graphql;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.graphql.client.ClientGraphQlResponse;
-import org.springframework.lang.Nullable;
 
 
 /**
@@ -49,8 +50,7 @@ public interface ResponseField {
 	 * @param <T> the expected value type to cast to
 	 * @return the value
 	 */
-	@Nullable
-	<T> T getValue();
+	@Nullable <T> T getValue();
 
 	/**
 	 * Return all errors that have a path, and it is at above, or below the field path.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,8 @@ import graphql.schema.DataFetchingEnvironment;
 import io.micrometer.context.ThreadLocalAccessor;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
-
-import org.springframework.lang.Nullable;
 
 /**
  * Adapter for {@link DataFetcherExceptionResolver} that pre-implements the
@@ -92,11 +91,10 @@ public abstract class DataFetcherExceptionResolverAdapter implements DataFetcher
 		return Mono.defer(() -> Mono.justOrEmpty(resolveInternal(ex, env)));
 	}
 
-	@Nullable
-	private List<GraphQLError> resolveInternal(Throwable exception, DataFetchingEnvironment env) {
+	private @Nullable List<GraphQLError> resolveInternal(Throwable exception, DataFetchingEnvironment env) {
 		try {
 			return (this.threadLocalContextAware) ?
-					ContextSnapshotFactoryHelper.captureFrom(env.getGraphQlContext())
+					ContextPropagationHelper.captureFrom(env.getGraphQlContext())
 							.wrap(() -> resolveToMultipleErrors(exception, env))
 							.call() :
 					resolveToMultipleErrors(exception, env);
@@ -113,8 +111,7 @@ public abstract class DataFetcherExceptionResolverAdapter implements DataFetcher
 	 * @param env the environment for the invoked {@code DataFetcher}
 	 * @return the resolved errors or {@code null} if unresolved
 	 */
-	@Nullable
-	protected List<GraphQLError> resolveToMultipleErrors(Throwable ex, DataFetchingEnvironment env) {
+	protected @Nullable List<GraphQLError> resolveToMultipleErrors(Throwable ex, DataFetchingEnvironment env) {
 		GraphQLError error = resolveToSingleError(ex, env);
 		return (error != null) ? Collections.singletonList(error) : null;
 	}
@@ -125,8 +122,7 @@ public abstract class DataFetcherExceptionResolverAdapter implements DataFetcher
 	 * @param env the environment for the invoked {@code DataFetcher}
 	 * @return the resolved error or {@code null} if unresolved
 	 */
-	@Nullable
-	protected GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
+	protected @Nullable GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
 		return null;
 	}
 

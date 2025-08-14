@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,10 +29,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 import org.springframework.core.MethodParameter;
 import org.springframework.core.ResolvableType;
@@ -57,13 +57,27 @@ class GraphQlArgumentBinderTests {
 
 	private final ObjectMapper mapper = new ObjectMapper();
 
-	private final GraphQlArgumentBinder binder = new GraphQlArgumentBinder(new DefaultFormattingConversionService());
+	private final GraphQlArgumentBinder binder = new GraphQlArgumentBinder(
+			GraphQlArgumentBinder.Options.create().conversionService(new DefaultFormattingConversionService()));
 
 
 	@Test
 	void dataBinding() throws Exception {
 
 		Object result = bind("{\"name\":\"test\"}", ResolvableType.forClass(SimpleBean.class));
+
+		assertThat(result).isNotNull().isInstanceOf(SimpleBean.class);
+		assertThat(((SimpleBean) result).getName()).isEqualTo("test");
+	}
+
+	@Test
+	void dataBindingWithNameResolver() throws Exception {
+
+		GraphQlArgumentBinder.Options options = GraphQlArgumentBinder.Options.create()
+				.nameResolver(name -> name.equals("name__") ? "name" : name);
+
+		Object result = bind(new GraphQlArgumentBinder(options),
+				"{\"name__\":\"test\"}", ResolvableType.forClass(SimpleBean.class));
 
 		assertThat(result).isNotNull().isInstanceOf(SimpleBean.class);
 		assertThat(((SimpleBean) result).getName()).isEqualTo("test");
@@ -122,8 +136,11 @@ class GraphQlArgumentBinderTests {
 	@Test // gh-599
 	void dataBindingWithDirectFieldAccess() throws Exception {
 
-		Object result = bind(
-				new GraphQlArgumentBinder(new DefaultFormattingConversionService(), true /* fallBackOnFieldAccess */),
+		GraphQlArgumentBinder.Options options = GraphQlArgumentBinder.Options.create()
+				.conversionService(new DefaultFormattingConversionService())
+				.fallBackOnDirectFieldAccess(true);
+
+		Object result = bind(new GraphQlArgumentBinder(options),
 				"{\"items\":[{\"name\":\"first\"},{\"name\":\"second\"}]}",
 				ResolvableType.forClass(DirectFieldAccessItemListHolder.class));
 
@@ -195,6 +212,16 @@ class GraphQlArgumentBinderTests {
 		assertThat(result).hasFieldOrPropertyWithValue("name", "test");
 	}
 
+	@Test // gh-1163
+	void mixedConstructorProperties() throws Exception {
+
+		Object result = bind("{\"name\":\"test\", \"age\":30}",
+				ResolvableType.forClass(MixedConstructorPropertiesBean.class));
+
+		assertThat(result).isNotNull().isInstanceOf(MixedConstructorPropertiesBean.class);
+		assertThat(result).hasFieldOrPropertyWithValue("name", "test").hasFieldOrPropertyWithValue("age", 30);
+	}
+
 	@Test
 	void primaryConstructorWithBeanArgument() throws Exception {
 
@@ -208,6 +235,27 @@ class GraphQlArgumentBinderTests {
 		assertThat(itemBean.getItem().getName()).isEqualTo("Item name");
 		assertThat(itemBean.getName()).isEqualTo("Hello");
 		assertThat(itemBean.getAge()).isEqualTo(30);
+	}
+
+
+	@Test
+	void primaryConstructorWithNameResolver() throws Exception {
+
+		GraphQlArgumentBinder.Options options = GraphQlArgumentBinder.Options.create()
+				.nameResolver(name -> name.equals("age__") ? "age" : name);
+
+		Object result = bind(
+				new GraphQlArgumentBinder(options),
+				"{\"name\":\"Hello\",\"age__\":\"1\",\"item\":{\"name\":\"Item name\",\"age__\":\"2\"}}",
+				ResolvableType.forClass(PrimaryConstructorItemBean.class));
+
+		assertThat(result).isNotNull().isInstanceOf(PrimaryConstructorItemBean.class);
+		PrimaryConstructorItemBean itemBean = (PrimaryConstructorItemBean) result;
+
+		assertThat(itemBean.getName()).isEqualTo("Hello");
+		assertThat(itemBean.getAge()).isEqualTo(1);
+		assertThat(itemBean.getItem().getName()).isEqualTo("Item name");
+		assertThat(itemBean.getItem().getAge()).isEqualTo(2);
 	}
 
 	@Test
@@ -231,14 +279,14 @@ class GraphQlArgumentBinderTests {
 				ResolvableType.forClass(PrimaryConstructorOptionalArgumentItemBean.class);
 
 		Object result = bind(
-				"{\"item\":{\"name\":\"Item name\",\"age\":\"30\"},\"name\":\"Hello\"}", targetType);
+				"{\"name\":\"Hello\",\"item\":{\"name\":\"Item name\",\"age\":\"30\"}}", targetType);
 
 		assertThat(result).isInstanceOf(PrimaryConstructorOptionalArgumentItemBean.class).isNotNull();
 		PrimaryConstructorOptionalArgumentItemBean itemBean = (PrimaryConstructorOptionalArgumentItemBean) result;
 
+		assertThat(itemBean.getName().value()).isEqualTo("Hello");
 		assertThat(itemBean.getItem().value().getName()).isEqualTo("Item name");
 		assertThat(itemBean.getItem().value().getAge()).isEqualTo(30);
-		assertThat(itemBean.getName().value()).isEqualTo("Hello");
 
 		result = bind("{\"key\":{}}", targetType);
 		itemBean = (PrimaryConstructorOptionalArgumentItemBean) result;
@@ -454,6 +502,29 @@ class GraphQlArgumentBinderTests {
 
 		public String getName() {
 			return this.name;
+		}
+	}
+
+	static class MixedConstructorPropertiesBean {
+
+		private final String name;
+
+		private int age;
+
+		public MixedConstructorPropertiesBean(String name) {
+			this.name = name;
+		}
+
+		public String getName() {
+			return this.name;
+		}
+
+		public int getAge() {
+			return this.age;
+		}
+
+		public void setAge(int age) {
+			this.age = age;
 		}
 	}
 

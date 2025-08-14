@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.graphql.execution;
 
 import io.micrometer.context.ThreadLocalAccessor;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -58,7 +59,7 @@ public class SecurityContextThreadLocalAccessor implements ThreadLocalAccessor<O
 	}
 
 	@Override
-	public Object getValue() {
+	public @Nullable Object getValue() {
 		return this.delegate.getValue();
 	}
 
@@ -147,7 +148,7 @@ public class SecurityContextThreadLocalAccessor implements ThreadLocalAccessor<O
 		}
 
 		@Override
-		public Object getValue() {
+		public @Nullable Object getValue() {
 			return null;
 		}
 

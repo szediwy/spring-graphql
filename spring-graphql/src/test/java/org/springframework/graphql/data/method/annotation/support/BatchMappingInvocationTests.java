@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2023 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.graphql.data.method.annotation.support;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,6 +25,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import graphql.GraphQLContext;
+import graphql.execution.DataFetcherResult;
+import org.dataloader.BatchLoaderEnvironment;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -33,6 +38,7 @@ import reactor.core.publisher.Mono;
 import org.springframework.graphql.ExecutionGraphQlResponse;
 import org.springframework.graphql.ResponseHelper;
 import org.springframework.graphql.data.method.annotation.BatchMapping;
+import org.springframework.graphql.data.method.annotation.QueryMapping;
 import org.springframework.stereotype.Controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,7 +51,7 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
  * @author Rossen Stoyanchev
  */
 @SuppressWarnings("unused")
-public class BatchMappingInvocationTests extends BatchMappingTestSupport {
+class BatchMappingInvocationTests extends BatchMappingTestSupport {
 
 	private static Stream<Arguments> controllers() {
 		return Stream.of(
@@ -126,12 +132,34 @@ public class BatchMappingInvocationTests extends BatchMappingTestSupport {
 		}
 	}
 
+	@Test
+	void shouldBindKeyContextsToEnvironment() {
+		String document = "{ " +
+				"  courses { " +
+				"    id" +
+				"    name" +
+				"    students {" +
+				"      id" +
+				"      firstName" +
+				"      lastName" +
+				"    }" +
+				"  }" +
+				"}";
+
+		Mono<ExecutionGraphQlResponse> responseMono = createGraphQlService(
+				BatchKeyContextsController.class, new BatchKeyContextsController()).execute(document);
+
+		List<Course> actualCourses = ResponseHelper.forResponse(responseMono).toList("courses", Course.class);
+		List<Course> courses = Course.allCourses();
+		assertThat(actualCourses).hasSize(courses.size());
+	}
+
 
 	@Controller
 	private static class BatchMonoMapController extends CourseController {
 
 		@BatchMapping
-		public Mono<Map<Course, Person>> instructor(List<Course> courses) {
+		public Mono<Map<Course, Person>> instructor(List<Course> courses, BatchLoaderEnvironment environment) {
 			return Flux.fromIterable(courses).collect(Collectors.toMap(Function.identity(), Course::instructor));
 		}
 
@@ -201,6 +229,31 @@ public class BatchMappingInvocationTests extends BatchMappingTestSupport {
 			return () -> courses.stream().collect(Collectors.toMap(Function.identity(), Course::students));
 		}
 
+	}
+
+	@Controller
+	private static class BatchKeyContextsController {
+
+		@QueryMapping
+		public DataFetcherResult<Collection<Course>> courses() {
+			return DataFetcherResult.<Collection<Course>>newResult().data(courseMap.values())
+					.localContext(GraphQLContext.newContext().build())
+					.build();
+		}
+
+		@BatchMapping
+		public List<Person> instructor(List<Course> courses, BatchLoaderEnvironment environment) {
+			assertThat(environment.getKeyContexts().keySet()).containsAll(Course.allCourses());
+			assertThat(environment.getKeyContexts().values()).allSatisfy(value -> assertThat(value).isInstanceOf(GraphQLContext.class));
+			return courses.stream().map(Course::instructor).collect(Collectors.toList());
+		}
+
+		@BatchMapping
+		public List<List<Person>> students(List<Course> courses, BatchLoaderEnvironment environment) {
+			assertThat(environment.getKeyContexts().keySet()).containsAll(Course.allCourses());
+			assertThat(environment.getKeyContexts().values()).allSatisfy(value -> assertThat(value).isInstanceOf(GraphQLContext.class));
+			return courses.stream().map(Course::students).collect(Collectors.toList());
+		}
 	}
 
 

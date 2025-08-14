@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.graphql.data.method.annotation.support;
 
 import graphql.schema.DataFetchingEnvironment;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.core.MethodParameter;
 import org.springframework.core.ResolvableType;
@@ -56,7 +57,7 @@ public class ArgumentsMethodArgumentResolver implements HandlerMethodArgumentRes
 	}
 
 	@Override
-	public Object resolveArgument(MethodParameter parameter, DataFetchingEnvironment environment) throws Exception {
+	public @Nullable Object resolveArgument(MethodParameter parameter, DataFetchingEnvironment environment) throws Exception {
 		ResolvableType resolvableType = ResolvableType.forMethodParameter(parameter);
 		return this.argumentBinder.bind(environment, null, resolvableType);
 	}

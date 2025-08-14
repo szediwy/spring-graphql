@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,12 @@ import java.util.List;
 
 import io.micrometer.context.ContextSnapshot;
 import io.micrometer.context.ContextSnapshotFactory;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 import org.springframework.graphql.ExecutionGraphQlService;
-import org.springframework.graphql.execution.ContextSnapshotFactoryHelper;
+import org.springframework.graphql.execution.ContextPropagationHelper;
 import org.springframework.graphql.server.WebGraphQlInterceptor.Chain;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
 
@@ -42,11 +42,9 @@ class DefaultWebGraphQlHandlerBuilder implements WebGraphQlHandler.Builder {
 
 	private final List<WebGraphQlInterceptor> interceptors = new ArrayList<>();
 
-	@Nullable
-	private ContextSnapshotFactory snapshotFactory;
+	private @Nullable ContextSnapshotFactory snapshotFactory;
 
-	@Nullable
-	private WebSocketGraphQlInterceptor webSocketInterceptor;
+	private @Nullable WebSocketGraphQlInterceptor webSocketInterceptor;
 
 
 	DefaultWebGraphQlHandlerBuilder(ExecutionGraphQlService service) {
@@ -81,7 +79,7 @@ class DefaultWebGraphQlHandlerBuilder implements WebGraphQlHandler.Builder {
 	@Override
 	public WebGraphQlHandler build() {
 
-		ContextSnapshotFactory snapshotFactory = ContextSnapshotFactoryHelper.selectInstance(this.snapshotFactory);
+		ContextSnapshotFactory snapshotFactory = ContextPropagationHelper.selectInstance(this.snapshotFactory);
 
 		Chain endOfChain = (request) -> this.service.execute(request).map(WebGraphQlResponse::new);
 
@@ -107,7 +105,7 @@ class DefaultWebGraphQlHandlerBuilder implements WebGraphQlHandler.Builder {
 			public Mono<WebGraphQlResponse> handleRequest(WebGraphQlRequest request) {
 				ContextSnapshot snapshot = snapshotFactory.captureAll();
 				return executionChain.next(request).contextWrite((context) -> {
-					context = ContextSnapshotFactoryHelper.saveInstance(snapshotFactory, context);
+					context = ContextPropagationHelper.saveInstance(snapshotFactory, context);
 					return snapshot.updateContext(context);
 				});
 			}

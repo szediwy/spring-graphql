@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,9 +55,8 @@ import org.springframework.graphql.server.support.GraphQlWebSocketMessage;
 import org.springframework.graphql.server.support.GraphQlWebSocketMessageType;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpInputMessage;
-import org.springframework.http.converter.GenericHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageConverter;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketMessage;
@@ -71,16 +70,15 @@ import static org.springframework.graphql.server.support.GraphQlWebSocketMessage
 /**
  * Unit tests for {@link GraphQlWebSocketHandler}.
  */
-public class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
+class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
-	private static final HttpMessageConverter<?> converter = new MappingJackson2HttpMessageConverter();
+	private static final HttpMessageConverter<Object> converter = new JacksonJsonHttpMessageConverter();
 
 	private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
-
-	private final TestWebSocketSession session = new TestWebSocketSession();
-
 	private final GraphQlWebSocketHandler handler = initWebSocketHandler();
+
+	private TestWebSocketSession session = new TestWebSocketSession();
 
 
 	@Test
@@ -128,6 +126,25 @@ public class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 				.then(this.session::close)// Complete output Flux
 				.expectComplete()
 				.verify(TIMEOUT);
+	}
+
+	@Test
+	void brokenPipeShouldCancelPublisher() throws Exception {
+		this.session = new BrokenPipeSession();
+		handle(this.handler, new TextMessage("{\"type\":\"connection_init\"}"), new TextMessage(BOOK_SUBSCRIPTION));
+
+		BiConsumer<WebSocketMessage<?>, String> bookPayloadAssertion = (message, bookId) -> {
+			GraphQlWebSocketMessage actual = decode(message);
+			assertThat(actual.getId()).isEqualTo(SUBSCRIPTION_ID);
+			assertThat(actual.resolvedType()).isEqualTo(GraphQlWebSocketMessageType.NEXT);
+			assertThat(actual.<Map<String, Object>>getPayload())
+					.extractingByKey("data", as(InstanceOfAssertFactories.map(String.class, Object.class)))
+					.extractingByKey("bookSearch", as(InstanceOfAssertFactories.map(String.class, Object.class)))
+					.containsEntry("id", bookId);
+		};
+
+		StepVerifier.create(session.getOutput()).verifyComplete();
+		assertThat(SUBSCRIPTION_CANCELLED).isTrue();
 	}
 
 	@Test
@@ -438,15 +455,15 @@ public class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 		new ReflectiveRuntimeHintsRegistrar().registerRuntimeHints(runtimeHints, GraphQlWebSocketHandler.class);
 		ReflectionHintsPredicates reflection = RuntimeHintsPredicates.reflection();
 		assertThat(reflection.onType(GraphQlWebSocketMessage.class)).accepts(runtimeHints);
-		assertThat(reflection.onField(GraphQlWebSocketMessage.class, "id")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "getId")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "setId")).accepts(runtimeHints);
-		assertThat(reflection.onField(GraphQlWebSocketMessage.class, "type")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "getType")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "setType")).accepts(runtimeHints);
-		assertThat(reflection.onField(GraphQlWebSocketMessage.class, "payload")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "getPayload")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "setPayload")).accepts(runtimeHints);
+		assertThat(reflection.onFieldAccess(GraphQlWebSocketMessage.class, "id")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "getId")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "setId")).accepts(runtimeHints);
+		assertThat(reflection.onFieldAccess(GraphQlWebSocketMessage.class, "type")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "getType")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "setType")).accepts(runtimeHints);
+		assertThat(reflection.onFieldAccess(GraphQlWebSocketMessage.class, "payload")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "getPayload")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "setPayload")).accepts(runtimeHints);
 	}
 
 	private void handle(GraphQlWebSocketHandler handler, TextMessage... textMessages) throws Exception {
@@ -476,8 +493,7 @@ public class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 	private GraphQlWebSocketMessage decode(WebSocketMessage<?> message) {
 		try {
 			HttpInputMessageAdapter inputMessage = new HttpInputMessageAdapter((TextMessage) message);
-			return ((GenericHttpMessageConverter<GraphQlWebSocketMessage>) converter)
-					.read(GraphQlWebSocketMessage.class, null, inputMessage);
+			return (GraphQlWebSocketMessage) converter.read(GraphQlWebSocketMessage.class, inputMessage);
 		}
 		catch (IOException ex) {
 			throw new IllegalStateException(ex);

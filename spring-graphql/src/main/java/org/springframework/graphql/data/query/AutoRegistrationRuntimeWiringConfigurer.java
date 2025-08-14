@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,9 +32,9 @@ import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.WiringFactory;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.graphql.execution.RuntimeWiringConfigurer;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
 /**
@@ -98,8 +98,7 @@ class AutoRegistrationRuntimeWiringConfigurer implements RuntimeWiringConfigurer
 
 		private final RuntimeWiring.Builder builder;
 
-		@Nullable
-		private Predicate<String> existingQueryDataFetcherPredicate;
+		private @Nullable Predicate<String> existingQueryDataFetcherPredicate;
 
 		AutoRegistrationWiringFactory(RuntimeWiring.Builder builder) {
 			this.builder = builder;
@@ -129,8 +128,7 @@ class AutoRegistrationRuntimeWiringConfigurer implements RuntimeWiringConfigurer
 			return result;
 		}
 
-		@Nullable
-		private String getOutputTypeName(FieldWiringEnvironment environment) {
+		private @Nullable String getOutputTypeName(FieldWiringEnvironment environment) {
 			GraphQLType outputType = removeNonNullWrapper(environment.getFieldType());
 
 			if (isConnectionType(outputType)) {

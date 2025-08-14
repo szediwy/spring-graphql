@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.graphql.server.webflux;
 
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 
@@ -28,18 +29,18 @@ import reactor.core.publisher.Mono;
 import org.springframework.graphql.BookSource;
 import org.springframework.graphql.GraphQlRequest;
 import org.springframework.graphql.GraphQlSetup;
+import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.support.SerializableGraphQlRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.HttpMessageWriter;
 import org.springframework.http.codec.ServerSentEventHttpMessageWriter;
-import org.springframework.http.codec.json.Jackson2JsonEncoder;
+import org.springframework.http.codec.json.JacksonJsonEncoder;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.http.server.reactive.MockServerHttpResponse;
 import org.springframework.mock.web.reactive.function.server.MockServerRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import org.springframework.web.reactive.result.view.ViewResolver;
-import org.springframework.web.server.ServerWebExchange;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,11 +52,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GraphQlSseHandlerTests {
 
 	private static final List<HttpMessageWriter<?>> MESSAGE_WRITERS =
-			List.of(new ServerSentEventHttpMessageWriter(new Jackson2JsonEncoder()));
+			List.of(new ServerSentEventHttpMessageWriter(new JacksonJsonEncoder()));
 
 	private static final DataFetcher<?> SEARCH_DATA_FETCHER = env -> {
 		String author = env.getArgument("author");
-		return Flux.fromIterable(BookSource.books()).filter((book) -> book.getAuthor().getFullName().contains(author));
+		return Flux.fromIterable(BookSource.books())
+				.filter((book) -> book.getAuthor().getFullName().contains(author));
 	};
 
 	private final MockServerHttpRequest httpRequest = MockServerHttpRequest.post("/graphql")
@@ -66,7 +68,7 @@ class GraphQlSseHandlerTests {
 	@Test
 	void shouldRejectQueryOperations() {
 		SerializableGraphQlRequest request = initRequest("{ bookById(id: 42) {name} }");
-		GraphQlSseHandler handler = createHandler(SEARCH_DATA_FETCHER);
+		GraphQlSseHandler handler = createSseHandler(SEARCH_DATA_FETCHER);
 		MockServerHttpResponse response = handleRequest(this.httpRequest, handler, request);
 
 		assertThat(response.getHeaders().getContentType().isCompatibleWith(MediaType.TEXT_EVENT_STREAM)).isTrue();
@@ -86,7 +88,7 @@ class GraphQlSseHandlerTests {
 		SerializableGraphQlRequest request = initRequest(
 				"subscription TestSubscription { bookSearch(author:\"Orwell\") { id name } }");
 
-		GraphQlSseHandler handler = createHandler(SEARCH_DATA_FETCHER);
+		GraphQlSseHandler handler = createSseHandler(SEARCH_DATA_FETCHER);
 		MockServerHttpResponse response = handleRequest(this.httpRequest, handler, request);
 
 		assertThat(response.getHeaders().getContentType().isCompatibleWith(MediaType.TEXT_EVENT_STREAM)).isTrue();
@@ -103,6 +105,26 @@ class GraphQlSseHandlerTests {
 				""");
 	}
 
+	@Test // gh-1213
+	void shouldHandleNonPublisherValue() {
+
+		SerializableGraphQlRequest request = initRequest(
+				"subscription TestSubscription { bookSearch(author:\"Orwell\") { id name } }");
+
+		GraphQlSseHandler handler = createSseHandler(env -> BookSource.getBook(1L));
+		MockServerHttpResponse response = handleRequest(this.httpRequest, handler, request);
+
+		assertThat(response.getHeaders().getContentType().isCompatibleWith(MediaType.TEXT_EVENT_STREAM)).isTrue();
+		assertThat(response.getBodyAsString().block()).isEqualTo("""
+				event:next
+				data:{"data":{"bookSearch":{"id":"1","name":"Nineteen Eighty-Four"}}}
+
+				event:complete
+				data:{}
+
+				""");
+	}
+
 	@Test
 	void shouldWriteEventsAndTerminalError() {
 
@@ -112,7 +134,7 @@ class GraphQlSseHandlerTests {
 		DataFetcher<?> errorDataFetcher = env ->
 				Flux.just(BookSource.getBook(1L)).concatWith(Flux.error(new IllegalStateException("test error")));
 
-		GraphQlSseHandler handler = createHandler(errorDataFetcher);
+		GraphQlSseHandler handler = createSseHandler(errorDataFetcher);
 		MockServerHttpResponse response = handleRequest(this.httpRequest, handler, request);
 
 		assertThat(response.getHeaders().getContentType().isCompatibleWith(MediaType.TEXT_EVENT_STREAM)).isTrue();
@@ -129,12 +151,40 @@ class GraphQlSseHandlerTests {
 				""");
 	}
 
-	private GraphQlSseHandler createHandler(DataFetcher<?> subscriptionDataFetcher) {
-		return new GraphQlSseHandler(
-				GraphQlSetup.schemaResource(BookSource.schema)
-						.queryFetcher("bookById", (env) -> BookSource.getBookWithoutAuthor(1L))
-						.subscriptionFetcher("bookSearch", subscriptionDataFetcher)
-						.toWebGraphQlHandler());
+	@Test
+	void shouldSendKeepAlivePings() {
+		SerializableGraphQlRequest request = initRequest(
+				"subscription TestSubscription { bookSearch(author:\"Orwell\") { id name } }");
+
+		WebGraphQlHandler webGraphQlHandler = createWebGraphQlHandler(env -> Mono.delay(Duration.ofMillis(50)).then());
+		GraphQlSseHandler handler = new GraphQlSseHandler(webGraphQlHandler, null, Duration.ofMillis(10));
+
+		assertThat(handleRequest(this.httpRequest, handler, request).getBodyAsString().block())
+				.startsWith("""
+					:
+
+					:
+
+					""")
+				.endsWith("""
+					:
+
+					event:complete
+					data:{}
+
+					""");
+	}
+
+	private GraphQlSseHandler createSseHandler(DataFetcher<?> subscriptionDataFetcher) {
+		WebGraphQlHandler webGraphQlHandler = createWebGraphQlHandler(subscriptionDataFetcher);
+		return new GraphQlSseHandler(webGraphQlHandler);
+	}
+
+	private static WebGraphQlHandler createWebGraphQlHandler(DataFetcher<?> subscriptionDataFetcher) {
+		return GraphQlSetup.schemaResource(BookSource.schema)
+				.queryFetcher("bookById", (env) -> BookSource.getBookWithoutAuthor(1L))
+				.subscriptionFetcher("bookSearch", subscriptionDataFetcher)
+				.toWebGraphQlHandler();
 	}
 
 	private static SerializableGraphQlRequest initRequest(String document) {
@@ -150,9 +200,9 @@ class GraphQlSseHandlerTests {
 
 		MockServerRequest serverRequest = MockServerRequest.builder()
 				.exchange(exchange)
-				.uri(((ServerWebExchange) exchange).getRequest().getURI())
-				.method(((ServerWebExchange) exchange).getRequest().getMethod())
-				.headers(((ServerWebExchange) exchange).getRequest().getHeaders())
+				.uri(exchange.getRequest().getURI())
+				.method(exchange.getRequest().getMethod())
+				.headers(exchange.getRequest().getHeaders())
 				.body(Mono.just(body));
 
 		handler.handleRequest(serverRequest)

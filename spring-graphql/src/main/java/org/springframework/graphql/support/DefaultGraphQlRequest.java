@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2023 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,9 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.graphql.GraphQlRequest;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
@@ -46,8 +47,7 @@ public class DefaultGraphQlRequest implements GraphQlRequest {
 
 	private final String document;
 
-	@Nullable
-	private final String operationName;
+	private final @Nullable String operationName;
 
 	private final Map<String, Object> variables;
 
@@ -87,8 +87,7 @@ public class DefaultGraphQlRequest implements GraphQlRequest {
 	}
 
 	@Override
-	@Nullable
-	public String getOperationName() {
+	public @Nullable String getOperationName() {
 		return this.operationName;
 	}
 

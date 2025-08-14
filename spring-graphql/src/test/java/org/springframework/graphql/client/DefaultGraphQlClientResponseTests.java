@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2023 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,14 +26,15 @@ import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.execution.ResultPath;
 import graphql.language.SourceLocation;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.com.fasterxml.jackson.databind.DeserializationFeature;
 import org.testcontainers.shaded.com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.graphql.ResponseError;
-import org.springframework.http.codec.json.Jackson2JsonDecoder;
-import org.springframework.http.codec.json.Jackson2JsonEncoder;
-import org.springframework.lang.Nullable;
+import org.springframework.http.codec.json.JacksonJsonDecoder;
+import org.springframework.http.codec.json.JacksonJsonEncoder;
+
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
@@ -43,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
  * Unit tests for {@link DefaultClientGraphQlResponse}.
  * @author Rossen Stoyanchev
  */
-public class DefaultGraphQlClientResponseTests {
+class DefaultGraphQlClientResponseTests {
 
 	private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -184,7 +185,7 @@ public class DefaultGraphQlClientResponseTests {
 		return new DefaultClientGraphQlResponse(
 				new DefaultClientGraphQlRequest("{test}", null, Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap()),
 				new ResponseMapGraphQlResponse(responseMap),
-				new Jackson2JsonEncoder(), new Jackson2JsonDecoder());
+				new JacksonJsonEncoder(), new JacksonJsonDecoder());
 	}
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,16 +30,17 @@ import graphql.execution.preparsed.persisted.ApolloPersistedQuerySupport;
 import graphql.execution.preparsed.persisted.InMemoryPersistedQueryCache;
 import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.shaded.com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.graphql.GraphQlSetup;
+import org.springframework.graphql.MediaTypes;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.support.SerializableGraphQlRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.ByteArrayHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageConverter;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.function.AsyncServerResponse;
@@ -54,10 +55,10 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
  * @author Rossen Stoyanchev
  * @author Brian Clozel
  */
-public class GraphQlHttpHandlerTests {
+class GraphQlHttpHandlerTests {
 
 	private static final List<HttpMessageConverter<?>> MESSAGE_READERS =
-			List.of(new MappingJackson2HttpMessageConverter(), new ByteArrayHttpMessageConverter());
+			List.of(new JacksonJsonHttpMessageConverter(), new ByteArrayHttpMessageConverter());
 
 	private final GraphQlHttpHandler greetingHandler = GraphQlSetup.schemaContent("type Query { greeting: String }")
 			.queryFetcher("greeting", (env) -> "Hello").toHttpHandler();
@@ -91,9 +92,9 @@ public class GraphQlHttpHandlerTests {
 
 	@Test
 	void shouldProduceApplicationGraphQl() throws Exception {
-		MockHttpServletRequest request = createServletRequest("{ greeting }", MediaType.APPLICATION_GRAPHQL_RESPONSE_VALUE);
+		MockHttpServletRequest request = createServletRequest("{ greeting }", MediaTypes.APPLICATION_GRAPHQL_RESPONSE.toString());
 		MockHttpServletResponse response = handleRequest(request, this.greetingHandler);
-		assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_GRAPHQL_RESPONSE_VALUE);
+		assertThat(response.getContentType()).isEqualTo(MediaTypes.APPLICATION_GRAPHQL_RESPONSE.toString());
 	}
 
 	@Test
@@ -110,7 +111,7 @@ public class GraphQlHttpHandlerTests {
 				.toHttpHandler();
 
 		MockHttpServletRequest request = createServletRequest(
-				"{ greeting }", MediaType.APPLICATION_GRAPHQL_RESPONSE_VALUE);
+				"{ greeting }", MediaTypes.APPLICATION_GRAPHQL_RESPONSE.toString());
 
 		LocaleContextHolder.setLocale(Locale.FRENCH);
 
@@ -130,7 +131,7 @@ public class GraphQlHttpHandlerTests {
 				.toHttpHandler();
 
 		MockHttpServletRequest request = createServletRequest(
-				"{ showId }", MediaType.APPLICATION_GRAPHQL_RESPONSE_VALUE);
+				"{ showId }", MediaTypes.APPLICATION_GRAPHQL_RESPONSE.toString());
 
 		MockHttpServletResponse response = handleRequest(request, handler);
 
@@ -144,8 +145,8 @@ public class GraphQlHttpHandlerTests {
 		WebGraphQlHandler webGraphQlHandler = GraphQlSetup.schemaContent("type Query { greeting: String }")
 				.queryFetcher("greeting", (env) -> "Hello").toWebGraphQlHandler();
 
-		GraphQlHttpHandler handler = new GraphQlHttpHandler(webGraphQlHandler, new MappingJackson2HttpMessageConverter());
-		MockHttpServletRequest servletRequest = createServletRequest("{ greeting }", MediaType.APPLICATION_GRAPHQL_RESPONSE_VALUE);
+		GraphQlHttpHandler handler = new GraphQlHttpHandler(webGraphQlHandler, new JacksonJsonHttpMessageConverter());
+		MockHttpServletRequest servletRequest = createServletRequest("{ greeting }", MediaTypes.APPLICATION_GRAPHQL_RESPONSE.toString());
 
 		ServerRequest request = ServerRequest.create(servletRequest, Collections.emptyList());
 		ServerResponse response = handler.handleRequest(request);

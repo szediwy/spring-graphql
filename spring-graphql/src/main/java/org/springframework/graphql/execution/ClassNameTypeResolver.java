@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
 import graphql.schema.TypeResolver;
+import org.jspecify.annotations.Nullable;
 
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
 /**
@@ -76,8 +76,7 @@ public class ClassNameTypeResolver implements TypeResolver {
 	}
 
 	@Override
-	@Nullable
-	public GraphQLObjectType getType(TypeResolutionEnvironment environment) {
+	public @Nullable GraphQLObjectType getType(TypeResolutionEnvironment environment) {
 
 		Class<?> clazz = environment.getObject().getClass();
 		GraphQLSchema schema = environment.getSchema();
@@ -88,8 +87,7 @@ public class ClassNameTypeResolver implements TypeResolver {
 		return getTypeForClass(clazz, schema);
 	}
 
-	@Nullable
-	private GraphQLObjectType getTypeForClass(Class<?> clazz, GraphQLSchema schema) {
+	private @Nullable GraphQLObjectType getTypeForClass(Class<?> clazz, GraphQLSchema schema) {
 		if (clazz.getName().startsWith("java.")) {
 			return null;
 		}
@@ -126,8 +124,7 @@ public class ClassNameTypeResolver implements TypeResolver {
 		return null;
 	}
 
-	@Nullable
-	private String getMapping(Class<?> targetClass) {
+	private @Nullable String getMapping(Class<?> targetClass) {
 		for (Map.Entry<Class<?>, String> entry : this.mappings.entrySet()) {
 			if (entry.getKey().isAssignableFrom(targetClass)) {
 				return entry.getValue();

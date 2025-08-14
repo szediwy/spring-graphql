@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,20 +22,25 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
 
+import org.jspecify.annotations.Nullable;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import tools.jackson.databind.json.JsonMapper;
 
 import org.springframework.core.codec.Decoder;
 import org.springframework.core.codec.Encoder;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.graphql.GraphQlResponse;
 import org.springframework.graphql.client.SyncGraphQlClientInterceptor.Chain;
+import org.springframework.graphql.client.json.GraphQlJackson2Module;
+import org.springframework.graphql.client.json.GraphQlJacksonModule;
 import org.springframework.graphql.support.CachingDocumentSource;
 import org.springframework.graphql.support.DocumentSource;
 import org.springframework.graphql.support.ResourceDocumentSource;
 import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 
@@ -57,6 +62,9 @@ import org.springframework.util.ClassUtils;
 public abstract class AbstractGraphQlClientSyncBuilder<B extends AbstractGraphQlClientSyncBuilder<B>>
 		implements GraphQlClient.SyncBuilder<B> {
 
+	protected static final boolean jacksonPresent = ClassUtils.isPresent(
+			"tools.jackson.databind.ObjectMapper", AbstractGraphQlClientSyncBuilder.class.getClassLoader());
+
 	protected static final boolean jackson2Present = ClassUtils.isPresent(
 			"com.fasterxml.jackson.databind.ObjectMapper", AbstractGraphQlClientSyncBuilder.class.getClassLoader());
 
@@ -65,13 +73,11 @@ public abstract class AbstractGraphQlClientSyncBuilder<B extends AbstractGraphQl
 
 	private DocumentSource documentSource;
 
-	@Nullable
-	private HttpMessageConverter<Object> jsonConverter;
+	private @Nullable HttpMessageConverter<Object> jsonConverter;
 
 	private Scheduler scheduler = Schedulers.boundedElastic();
 
-	@Nullable
-	private Duration blockingTimeout;
+	private @Nullable Duration blockingTimeout;
 
 	/**
 	 * Default constructor for use from subclasses.
@@ -146,9 +152,13 @@ public abstract class AbstractGraphQlClientSyncBuilder<B extends AbstractGraphQl
 	 */
 	protected GraphQlClient buildGraphQlClient(SyncGraphQlTransport transport) {
 
-		if (jackson2Present) {
+		if (jacksonPresent) {
 			this.jsonConverter = (this.jsonConverter == null) ?
 					DefaultJacksonConverter.initialize() : this.jsonConverter;
+		}
+		else if (jackson2Present) {
+			this.jsonConverter = (this.jsonConverter == null) ?
+					DefaultJackson2Converter.initialize() : this.jsonConverter;
 		}
 
 		return new DefaultGraphQlClient(
@@ -191,7 +201,18 @@ public abstract class AbstractGraphQlClientSyncBuilder<B extends AbstractGraphQl
 	private static final class DefaultJacksonConverter {
 
 		static HttpMessageConverter<Object> initialize() {
-			return new MappingJackson2HttpMessageConverter();
+			JsonMapper jsonMapper = JsonMapper.builder().addModule(new GraphQlJacksonModule()).build();
+			return new JacksonJsonHttpMessageConverter(jsonMapper);
+		}
+	}
+
+	@SuppressWarnings("removal")
+	private static final class DefaultJackson2Converter {
+
+		static HttpMessageConverter<Object> initialize() {
+			com.fasterxml.jackson.databind.ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json()
+					.modulesToInstall(new GraphQlJackson2Module()).build();
+			return new MappingJackson2HttpMessageConverter(objectMapper);
 		}
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,11 @@ package org.springframework.graphql.data;
 
 
 import java.util.Optional;
+import java.util.function.Consumer;
 
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
+
+import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 
 /**
@@ -47,11 +50,12 @@ import org.springframework.util.ObjectUtils;
  */
 public final class ArgumentValue<T> {
 
+	private static final ArgumentValue<?> EMPTY = new ArgumentValue<>(null, false);
+
 	private static final ArgumentValue<?> OMITTED = new ArgumentValue<>(null, true);
 
 
-	@Nullable
-	private final T value;
+	private final @Nullable T value;
 
 	private final boolean omitted;
 
@@ -70,6 +74,15 @@ public final class ArgumentValue<T> {
 	}
 
 	/**
+	 * Return {@code true} if the input value was present in the input but the value was {@code null},
+	 * and {@code false} otherwise.
+	 * @since 1.4.0
+	 */
+	public boolean isEmpty() {
+		return !this.omitted && this.value == null;
+	}
+
+	/**
 	 * Return {@code true} if the input value was omitted altogether from the
 	 * input, and {@code false} if it was provided, but possibly set to the
 	 * {@literal "null"} literal.
@@ -81,8 +94,7 @@ public final class ArgumentValue<T> {
 	/**
 	 * Return the contained value, or {@code null}.
 	 */
-	@Nullable
-	public T value() {
+	public @Nullable T value() {
 		return this.value;
 	}
 
@@ -93,9 +105,21 @@ public final class ArgumentValue<T> {
 		return Optional.ofNullable(this.value);
 	}
 
+	/**
+	 * If a value is present, performs the given action with the value, otherwise does nothing.
+	 * @param action the action to be performed, if a value is present
+	 * @since 1.4.0
+	 */
+	public void ifPresent(Consumer<? super T> action) {
+		Assert.notNull(action, "Action is required");
+		if (this.value != null) {
+			action.accept(this.value);
+		}
+	}
+
 	@Override
 	public boolean equals(Object other) {
-		// This covers OMITTED constant
+		// This covers EMPTY and OMITTED constant
 		if (this == other) {
 			return true;
 		}
@@ -112,6 +136,12 @@ public final class ArgumentValue<T> {
 		return result;
 	}
 
+	@Override
+	public String toString() {
+		String v = ((this.value != null) ? this.value.toString() : (this.omitted) ? "omitted" : "empty");
+		return "ArgumentValue[" + v + "]";
+	}
+
 
 	/**
 	 * Static factory method for an argument value that was provided, even if
@@ -119,8 +149,9 @@ public final class ArgumentValue<T> {
 	 * @param <T> the type of value
 	 * @param value the value to hold in the instance
 	 */
+	@SuppressWarnings("unchecked")
 	public static <T> ArgumentValue<T> ofNullable(@Nullable T value) {
-		return new ArgumentValue<>(value, false);
+		return (value != null) ? new ArgumentValue<>(value, false) : (ArgumentValue<T>) EMPTY;
 	}
 
 	/**

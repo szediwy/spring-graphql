@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,10 @@ package org.springframework.graphql.data.federation;
 
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.graphql.data.method.HandlerMethod;
 import org.springframework.graphql.execution.ErrorType;
-import org.springframework.lang.Nullable;
 
 /**
  * Raised when a representation could not be resolved because:
@@ -41,8 +42,7 @@ public class RepresentationException extends RuntimeException {
 
 	private final Map<String, Object> representation;
 
-	@Nullable
-	private final HandlerMethod handlerMethod;
+	private final @Nullable HandlerMethod handlerMethod;
 
 	private final ErrorType errorType;
 
@@ -62,16 +62,14 @@ public class RepresentationException extends RuntimeException {
 	/**
 	 * Return the entity "representation" input map.
 	 */
-	@Nullable
-	public Map<String, Object> getRepresentation() {
+	public @Nullable Map<String, Object> getRepresentation() {
 		return this.representation;
 	}
 
 	/**
 	 * Return the mapped controller method, or {@code null} if it could not be mapped.
 	 */
-	@Nullable
-	public HandlerMethod getHandlerMethod() {
+	public @Nullable HandlerMethod getHandlerMethod() {
 		return this.handlerMethod;
 	}
 

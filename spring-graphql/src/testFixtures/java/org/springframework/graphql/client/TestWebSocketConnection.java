@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -236,8 +236,9 @@ public final class TestWebSocketConnection {
 		}
 
 		private void saveMessage(WebSocketMessage message) {
-			DataBuffer payload = message.getPayload().retainedSlice(0, message.getPayload().readableByteCount());
-			this.sentMessages.add(new WebSocketMessage(message.getType(), payload));
+			DataBuffer payload = message.getPayload();
+			DataBuffer saved = payload.factory().allocateBuffer(payload.readableByteCount());
+			this.sentMessages.add(new WebSocketMessage(message.getType(), saved.write(payload)));
 		}
 
 		@Override

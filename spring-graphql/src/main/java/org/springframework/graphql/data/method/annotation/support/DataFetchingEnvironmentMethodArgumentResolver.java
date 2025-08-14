@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,10 @@ import java.util.Locale;
 import java.util.Optional;
 
 import graphql.GraphQLContext;
+import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingFieldSelectionSet;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.core.MethodParameter;
 import org.springframework.graphql.data.method.HandlerMethodArgumentResolver;
@@ -45,6 +47,7 @@ public class DataFetchingEnvironmentMethodArgumentResolver implements HandlerMet
 		Class<?> type = parameter.getParameterType();
 		return (type.equals(DataFetchingEnvironment.class) || type.equals(GraphQLContext.class) ||
 				type.equals(DataFetchingFieldSelectionSet.class) ||
+				type.equals(GraphqlErrorBuilder.class) ||
 				type.equals(Locale.class) || isOptionalLocale(parameter));
 	}
 
@@ -53,7 +56,7 @@ public class DataFetchingEnvironmentMethodArgumentResolver implements HandlerMet
 	}
 
 	@Override
-	public Object resolveArgument(MethodParameter parameter, DataFetchingEnvironment environment) {
+	public @Nullable Object resolveArgument(MethodParameter parameter, DataFetchingEnvironment environment) {
 		Class<?> type = parameter.getParameterType();
 		if (type.equals(GraphQLContext.class)) {
 			return environment.getGraphQlContext();
@@ -69,6 +72,9 @@ public class DataFetchingEnvironmentMethodArgumentResolver implements HandlerMet
 		}
 		else if (type.equals(DataFetchingEnvironment.class)) {
 			return environment;
+		}
+		else if (type.equals(GraphqlErrorBuilder.class)) {
+			return GraphqlErrorBuilder.newError(environment);
 		}
 		else {
 			throw new IllegalStateException("Unexpected method parameter type: " + parameter);

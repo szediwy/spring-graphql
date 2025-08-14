@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.graphql.server.webmvc;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.Principal;
@@ -119,7 +120,7 @@ public class TestWebSocketSession implements WebSocketSession {
 	}
 
 	@Override
-	public void sendMessage(WebSocketMessage<?> message) {
+	public void sendMessage(WebSocketMessage<?> message) throws IOException {
 		emitMessagesSignal(this.messagesSink.tryEmitNext(message));
 	}
 

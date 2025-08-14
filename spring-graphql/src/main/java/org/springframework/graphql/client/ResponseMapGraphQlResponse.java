@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2023 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,11 +24,11 @@ import java.util.stream.Collectors;
 import graphql.ErrorClassification;
 import graphql.GraphQLError;
 import graphql.language.SourceLocation;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.graphql.GraphQlResponse;
 import org.springframework.graphql.ResponseError;
 import org.springframework.graphql.support.AbstractGraphQlResponse;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 
@@ -76,7 +76,7 @@ class ResponseMapGraphQlResponse extends AbstractGraphQlResponse {
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public <T> T getData() {
+	public @Nullable <T> T getData() {
 		return (T) this.responseMap.get("data");
 	}
 
@@ -160,8 +160,7 @@ class ResponseMapGraphQlResponse extends AbstractGraphQlResponse {
 
 
 		@Override
-		@Nullable
-		public String getMessage() {
+		public @Nullable String getMessage() {
 			return (String) this.errorMap.get("message");
 		}
 
@@ -177,7 +176,12 @@ class ResponseMapGraphQlResponse extends AbstractGraphQlResponse {
 				return graphql.ErrorType.valueOf(classification);
 			}
 			catch (IllegalArgumentException ex) {
-				return org.springframework.graphql.execution.ErrorType.valueOf(classification);
+				try {
+					return org.springframework.graphql.execution.ErrorType.valueOf(classification);
+				}
+				catch (IllegalArgumentException ex2) {
+					return ErrorClassification.errorClassification(classification);
+				}
 			}
 		}
 

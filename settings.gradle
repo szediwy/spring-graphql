@@ -13,8 +13,8 @@ pluginManagement {
 }
 
 plugins {
-	id "com.gradle.enterprise" version "3.16.2"
-	id "io.spring.ge.conventions" version "0.0.15"
+	id "org.gradle.toolchains.foojay-resolver-convention" version "1.0.0"
+	id "io.spring.develocity.conventions" version "0.0.23"
 }
 
 rootProject.name = 'spring-graphql'
@@ -23,17 +23,3 @@ include 'platform',
 	'spring-graphql-test',
 	'spring-graphql-docs'
 
-settings.gradle.projectsLoaded {
-	gradleEnterprise {
-		buildScan {
-			File buildDir = settings.gradle.rootProject.getBuildDir()
-			buildDir.mkdirs()
-			new File(buildDir, "build-scan-uri.txt").text = "(build scan not generated)"
-			buildScanPublished { scan ->
-				if (buildDir.exists()) {
-					new File(buildDir, "build-scan-uri.txt").text = "${scan.buildScanUri}\n"
-				}
-			}
-		}
-	}
-}

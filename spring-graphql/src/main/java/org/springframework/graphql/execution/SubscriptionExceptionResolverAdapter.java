@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,8 @@ import io.micrometer.context.ContextSnapshot;
 import io.micrometer.context.ThreadLocalAccessor;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
-
-import org.springframework.lang.Nullable;
 
 /**
  * Adapter for {@link SubscriptionExceptionResolver} that pre-implements the
@@ -83,7 +82,7 @@ public abstract class SubscriptionExceptionResolverAdapter implements Subscripti
 	public final Mono<List<GraphQLError>> resolveException(Throwable exception) {
 		if (this.threadLocalContextAware) {
 			return Mono.deferContextual((contextView) -> {
-				ContextSnapshot snapshot = ContextSnapshotFactoryHelper.captureFrom(contextView);
+				ContextSnapshot snapshot = ContextPropagationHelper.captureFrom(contextView);
 				try {
 					List<GraphQLError> errors = snapshot.wrap(() -> resolveToMultipleErrors(exception)).call();
 					return Mono.justOrEmpty(errors);
@@ -104,8 +103,7 @@ public abstract class SubscriptionExceptionResolverAdapter implements Subscripti
 	 * @param exception the exception to resolve
 	 * @return the resolved errors or {@code null} if unresolved
 	 */
-	@Nullable
-	protected List<GraphQLError> resolveToMultipleErrors(Throwable exception) {
+	protected @Nullable List<GraphQLError> resolveToMultipleErrors(Throwable exception) {
 		GraphQLError error = resolveToSingleError(exception);
 		return (error != null) ? Collections.singletonList(error) : null;
 	}
@@ -115,8 +113,7 @@ public abstract class SubscriptionExceptionResolverAdapter implements Subscripti
 	 * @param exception the exception to resolve
 	 * @return the resolved error or {@code null} if unresolved
 	 */
-	@Nullable
-	protected GraphQLError resolveToSingleError(Throwable exception) {
+	protected @Nullable GraphQLError resolveToSingleError(Throwable exception) {
 		return null;
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -321,6 +321,22 @@ class SchemaMappingInspectorTests extends SchemaMappingInspectorTestSupport {
 						type Book {
 							id: ID
 							name: String
+						}
+					""";
+			SchemaReport report = inspectSchema(schema, BookController.class);
+			assertThatReport(report).hasUnmappedFieldCount(0).hasSkippedTypeCount(0);
+		}
+
+		@Test
+		void reportIsEmptyWhenFieldHasMatchingObjectField() {
+			String schema = """
+						type Query {
+							bookById(id: ID): Book
+						}
+						type Book {
+							id: ID
+							name: String
+							publicField: String
 						}
 					""";
 			SchemaReport report = inspectSchema(schema, BookController.class);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.graphql.client;
 
+import java.util.Collections;
 import java.util.Map;
 
 import reactor.core.publisher.Flux;
@@ -24,10 +25,13 @@ import reactor.core.publisher.Mono;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.graphql.GraphQlRequest;
 import org.springframework.graphql.GraphQlResponse;
+import org.springframework.graphql.MediaTypes;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.util.Assert;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 
 
@@ -48,9 +52,8 @@ final class HttpGraphQlTransport implements GraphQlTransport {
 	private static final ParameterizedTypeReference<ServerSentEvent<Map<String, Object>>> SSE_TYPE =
 			new ParameterizedTypeReference<ServerSentEvent<Map<String, Object>>>() { };
 
-	// To be removed in favor of Framework's MediaType.APPLICATION_GRAPHQL_RESPONSE
-	private static final MediaType APPLICATION_GRAPHQL_RESPONSE =
-			new MediaType("application", "graphql-response+json");
+	private static final MediaType APPLICATION_GRAPHQL =
+			new MediaType("application", "graphql+json");
 
 
 	private final WebClient webClient;
@@ -73,20 +76,33 @@ final class HttpGraphQlTransport implements GraphQlTransport {
 
 
 	@Override
-	@SuppressWarnings("removal")
 	public Mono<GraphQlResponse> execute(GraphQlRequest request) {
 		return this.webClient.post()
 				.contentType(this.contentType)
-				.accept(MediaType.APPLICATION_JSON, APPLICATION_GRAPHQL_RESPONSE, MediaType.APPLICATION_GRAPHQL)
+				.accept(MediaType.APPLICATION_JSON, MediaTypes.APPLICATION_GRAPHQL_RESPONSE, APPLICATION_GRAPHQL)
 				.bodyValue(request.toMap())
 				.attributes((attributes) -> {
 					if (request instanceof ClientGraphQlRequest clientRequest) {
 						attributes.putAll(clientRequest.getAttributes());
 					}
 				})
-				.retrieve()
-				.bodyToMono(MAP_TYPE)
+				.exchangeToMono((response) -> {
+					if (response.statusCode().equals(HttpStatus.OK)) {
+						return response.bodyToMono(MAP_TYPE);
+					}
+					else if (response.statusCode().is4xxClientError() && isGraphQlResponse(response)) {
+						return response.bodyToMono(MAP_TYPE);
+					}
+					else {
+						return response.createError();
+					}
+				})
 				.map(ResponseMapGraphQlResponse::new);
+	}
+
+	private static boolean isGraphQlResponse(ClientResponse clientResponse) {
+		return MediaTypes.APPLICATION_GRAPHQL_RESPONSE
+				.isCompatibleWith(clientResponse.headers().contentType().orElse(null));
 	}
 
 	@Override
@@ -103,7 +119,10 @@ final class HttpGraphQlTransport implements GraphQlTransport {
 				.retrieve()
 				.bodyToFlux(SSE_TYPE)
 				.takeWhile((event) -> "next".equals(event.event()))
-				.map((event) -> new ResponseMapGraphQlResponse(event.data()));
+				.map((event) -> {
+					Map<String, Object> data = (event.data() != null) ? event.data() : Collections.emptyMap();
+					return new ResponseMapGraphQlResponse(data);
+				});
 	}
 
 }

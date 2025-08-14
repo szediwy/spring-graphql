@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2022 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import io.micrometer.common.docs.KeyName;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationConvention;
 import io.micrometer.observation.docs.ObservationDocumentation;
+import org.dataloader.DataLoader;
 
 /**
  * Documented {@link io.micrometer.common.KeyValue KeyValues} for {@link graphql.GraphQL GraphQL server observations}.
@@ -78,6 +79,33 @@ public enum GraphQlObservationDocumentation implements ObservationDocumentation 
 		@Override
 		public KeyName[] getLowCardinalityKeyNames() {
 			return DataFetcherLowCardinalityKeyNames.values();
+		}
+	},
+
+	/**
+	 * Observation created for {@link org.dataloader.DataLoader} operations.
+	 * @since 1.4.0
+	 */
+	DATA_LOADER {
+
+		@Override
+		public String getPrefix() {
+			return "graphql";
+		}
+
+		@Override
+		public Class<? extends ObservationConvention<? extends Observation.Context>> getDefaultConvention() {
+			return DefaultDataLoaderObservationConvention.class;
+		}
+
+		@Override
+		public KeyName[] getLowCardinalityKeyNames() {
+			return DataLoaderLowCardinalityKeyNames.values();
+		}
+
+		@Override
+		public KeyName[] getHighCardinalityKeyNames() {
+			return DataLoaderHighCardinalityKeyNames.values();
 		}
 	};
 
@@ -160,6 +188,54 @@ public enum GraphQlObservationDocumentation implements ObservationDocumentation 
 			@Override
 			public String asString() {
 				return "graphql.field.path";
+			}
+		}
+
+	}
+
+	public enum DataLoaderLowCardinalityKeyNames implements KeyName {
+
+		/**
+		 * Class name of the data fetching error.
+		 */
+		ERROR_TYPE {
+			@Override
+			public String asString() {
+				return "graphql.error.type";
+			}
+		},
+
+		/**
+		 * {@link DataLoader#getName()} of the data loader.
+		 */
+		LOADER_NAME {
+			@Override
+			public String asString() {
+				return "graphql.loader.name";
+			}
+		},
+
+		/**
+		 * Outcome of the GraphQL data fetching operation.
+		 */
+		OUTCOME {
+			@Override
+			public String asString() {
+				return "graphql.outcome";
+			}
+		}
+
+	}
+
+	public enum DataLoaderHighCardinalityKeyNames implements KeyName {
+
+		/**
+		 * Size of the list of elements returned by the data loading operation.
+		 */
+		LOADER_SIZE {
+			@Override
+			public String asString() {
+				return "graphql.loader.size";
 			}
 		}
 

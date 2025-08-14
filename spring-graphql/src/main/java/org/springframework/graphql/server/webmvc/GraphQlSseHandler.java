@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,22 +17,27 @@
 package org.springframework.graphql.server.webmvc;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
 import graphql.ErrorType;
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
+import graphql.GraphqlErrorBuilder;
+import org.apache.commons.logging.Log;
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 import org.springframework.graphql.execution.SubscriptionPublisherException;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.WebGraphQlResponse;
-import org.springframework.util.AlternativeJdkIdGenerator;
-import org.springframework.util.IdGenerator;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
 
@@ -48,11 +53,49 @@ import org.springframework.web.servlet.function.ServerResponse;
  */
 public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 
-	private final IdGenerator idGenerator = new AlternativeJdkIdGenerator();
+	private static final Map<String, Object> HEARTBEAT_MAP = new LinkedHashMap<>(0);
 
 
+	private final @Nullable Duration timeout;
+
+	private final @Nullable Duration keepAliveDuration;
+
+
+	/**
+	 * Constructor with the handler to delegate to, and no timeout,
+	 * i.e. relying on underlying Server async request timeout.
+	 * @param graphQlHandler the handler to delegate to
+	 */
 	public GraphQlSseHandler(WebGraphQlHandler graphQlHandler) {
+		this(graphQlHandler, null, null);
+	}
+
+	/**
+	 * Variant constructor with a timeout to use for SSE subscriptions.
+	 * @param graphQlHandler the handler to delegate to
+	 * @param timeout the timeout value to set on
+	 * {@link org.springframework.web.context.request.async.AsyncWebRequest#setTimeout(Long)}
+	 * @since 1.3.3
+	 */
+	public GraphQlSseHandler(WebGraphQlHandler graphQlHandler, @Nullable Duration timeout) {
+		this(graphQlHandler, timeout, null);
+	}
+
+	/**
+	 * Variant constructor with a timeout to use for SSE subscriptions.
+	 * @param graphQlHandler the handler to delegate to
+	 * @param timeout the timeout value to set on
+	 * @param keepAliveDuration how frequently to send empty comment messages
+	 * when no other messages are sent
+	 * {@link org.springframework.web.context.request.async.AsyncWebRequest#setTimeout(Long)}
+	 * @since 1.4.0
+	 */
+	public GraphQlSseHandler(
+			WebGraphQlHandler graphQlHandler, @Nullable Duration timeout, @Nullable Duration keepAliveDuration) {
+
 		super(graphQlHandler, null);
+		this.timeout = timeout;
+		this.keepAliveDuration = keepAliveDuration;
 	}
 
 
@@ -80,7 +123,9 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 					.toSpecification());
 		});
 
-		return ServerResponse.sse(SseSubscriber.connect(resultFlux));
+		return ((this.timeout != null) ?
+				ServerResponse.sse(SseSubscriber.connect(resultFlux, this.logger, this.keepAliveDuration), this.timeout) :
+				ServerResponse.sse(SseSubscriber.connect(resultFlux, this.logger, this.keepAliveDuration)));
 	}
 
 
@@ -91,39 +136,71 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 
 		private final ServerResponse.SseBuilder sseBuilder;
 
-		private SseSubscriber(ServerResponse.SseBuilder sseBuilder) {
+		private final Log logger;
+
+		private SseSubscriber(ServerResponse.SseBuilder sseBuilder, Log logger) {
 			this.sseBuilder = sseBuilder;
+			this.sseBuilder.onTimeout(() -> cancelWithError(new AsyncRequestTimeoutException()));
+			this.logger = logger;
 		}
 
 		@Override
 		protected void hookOnNext(Map<String, Object> value) {
-			writeResult(value);
+			if (value == HEARTBEAT_MAP) {
+				sendHeartbeat();
+				return;
+			}
+			sendNext(value);
 		}
 
-		private void writeResult(Map<String, Object> value) {
+		private void sendNext(Map<String, Object> value) {
 			try {
 				this.sseBuilder.event("next");
 				this.sseBuilder.data(value);
 			}
 			catch (IOException exception) {
-				onError(exception);
+				cancelWithError(exception);
 			}
+		}
+
+		private void sendHeartbeat() {
+			try {
+				// Currently, comment cannot be empty:
+				// https://github.com/spring-projects/spring-framework/issues/34608
+				this.sseBuilder.comment(" ");
+				this.sseBuilder.send();
+			}
+			catch (IOException exception) {
+				cancelWithError(exception);
+			}
+		}
+
+		private void cancelWithError(Throwable ex) {
+			this.cancel();
+			this.sseBuilder.error(ex);
 		}
 
 		@Override
 		protected void hookOnError(Throwable ex) {
+			Map<String, Object> errorMap;
 			if (ex instanceof SubscriptionPublisherException spe) {
-				ExecutionResult result = ExecutionResult.newExecutionResult().errors(spe.getErrors()).build();
-				writeResult(result.toSpecification());
+				errorMap = spe.toMap();
 			}
 			else {
-				this.sseBuilder.error(ex);
+				if (this.logger.isErrorEnabled()) {
+					this.logger.error("Unresolved " + ex.getClass().getSimpleName(), ex);
+				}
+				errorMap = GraphqlErrorBuilder.newError()
+						.message("Subscription error")
+						.errorType(org.springframework.graphql.execution.ErrorType.INTERNAL_ERROR)
+						.build()
+						.toSpecification();
 			}
-			hookOnComplete();
+			sendNext(errorMap);
+			sendComplete();
 		}
 
-		@Override
-		protected void hookOnComplete() {
+		private void sendComplete() {
 			try {
 				this.sseBuilder.event("complete").data("");
 			}
@@ -133,11 +210,57 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 			this.sseBuilder.complete();
 		}
 
-		static Consumer<ServerResponse.SseBuilder> connect(Flux<Map<String, Object>> resultFlux) {
+		@Override
+		protected void hookOnComplete() {
+			sendComplete();
+		}
+
+		static Consumer<ServerResponse.SseBuilder> connect(
+				Flux<Map<String, Object>> resultFlux, Log logger, @Nullable Duration keepAliveDuration) {
+
 			return (sseBuilder) -> {
-				SseSubscriber subscriber = new SseSubscriber(sseBuilder);
-				resultFlux.subscribe(subscriber);
+				SseSubscriber subscriber = new SseSubscriber(sseBuilder, logger);
+				if (keepAliveDuration != null) {
+					KeepAliveHandler handler = new KeepAliveHandler(keepAliveDuration);
+					handler.compose(resultFlux).subscribe(subscriber);
+				}
+				else {
+					resultFlux.subscribe(subscriber);
+				}
 			};
+		}
+	}
+
+
+	private static final class KeepAliveHandler {
+
+		private final Duration keepAliveDuration;
+
+		private boolean eventSent;
+
+		private final Sinks.Empty<Void> completionSink = Sinks.empty();
+
+		KeepAliveHandler(Duration keepAliveDuration) {
+			this.keepAliveDuration = keepAliveDuration;
+		}
+
+		public Flux<Map<String, Object>> compose(Flux<Map<String, Object>> flux) {
+			return flux.doOnNext((event) -> this.eventSent = true)
+					.doOnComplete(this.completionSink::tryEmitEmpty)
+					.mergeWith(getKeepAliveFlux())
+					.takeUntilOther(this.completionSink.asMono());
+		}
+
+		private Flux<Map<String, Object>> getKeepAliveFlux() {
+			return Flux.interval(this.keepAliveDuration, this.keepAliveDuration)
+					.filter((aLong) -> !checkEventSentAndClear())
+					.map((aLong) -> HEARTBEAT_MAP);
+		}
+
+		private boolean checkEventSentAndClear() {
+			boolean result = this.eventSent;
+			this.eventSent = false;
+			return result;
 		}
 	}
 

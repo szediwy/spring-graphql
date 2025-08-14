@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,17 @@
 
 package org.springframework.graphql.server.webflux;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 import graphql.GraphQLError;
-import graphql.GraphqlErrorBuilder;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.core.ResolvableType;
 import org.springframework.core.codec.Decoder;
 import org.springframework.core.codec.Encoder;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
-import org.springframework.graphql.execution.ErrorType;
-import org.springframework.graphql.execution.SubscriptionPublisherException;
 import org.springframework.graphql.server.support.GraphQlWebSocketMessage;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.CodecConfigurer;
@@ -92,7 +89,7 @@ final class WebSocketCodecDelegate {
 	}
 
 	@SuppressWarnings("ConstantConditions")
-	GraphQlWebSocketMessage decode(WebSocketMessage webSocketMessage) {
+	@Nullable GraphQlWebSocketMessage decode(WebSocketMessage webSocketMessage) {
 		DataBuffer buffer = DataBufferUtils.retain(webSocketMessage.getPayload());
 		return (GraphQlWebSocketMessage) this.decoder.decode(buffer, MESSAGE_TYPE, null, null);
 	}
@@ -105,13 +102,7 @@ final class WebSocketCodecDelegate {
 		return encode(session, GraphQlWebSocketMessage.next(id, responseMap));
 	}
 
-	WebSocketMessage encodeError(WebSocketSession session, String id, Throwable ex) {
-		List<GraphQLError> errors = ((ex instanceof SubscriptionPublisherException) ?
-				((SubscriptionPublisherException) ex).getErrors() :
-				Collections.singletonList(GraphqlErrorBuilder.newError()
-						.message("Subscription error")
-						.errorType(ErrorType.INTERNAL_ERROR)
-						.build()));
+	WebSocketMessage encodeError(WebSocketSession session, String id, List<GraphQLError> errors) {
 		return encode(session, GraphQlWebSocketMessage.error(id, errors));
 	}
 

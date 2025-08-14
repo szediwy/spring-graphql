@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,17 @@
 
 package org.springframework.graphql.execution;
 
+import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import graphql.ErrorType;
 import org.dataloader.DataLoaderRegistry;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 import org.springframework.graphql.Author;
 import org.springframework.graphql.Book;
@@ -28,6 +34,7 @@ import org.springframework.graphql.ExecutionGraphQlRequest;
 import org.springframework.graphql.ExecutionGraphQlResponse;
 import org.springframework.graphql.GraphQlSetup;
 import org.springframework.graphql.TestExecutionRequest;
+import org.springframework.graphql.support.DefaultExecutionGraphQlRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,9 +42,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Unit tests for {@link DefaultExecutionGraphQlService}.
  *
  * @author Rossen Stoyanchev
- * @since 1.2.4
  */
-public class DefaultExecutionGraphQlServiceTests {
+class DefaultExecutionGraphQlServiceTests {
 
 	@Test
 	void customDataLoaderRegistry() {
@@ -62,6 +68,35 @@ public class DefaultExecutionGraphQlServiceTests {
 		Map<?, ?> data = response.getExecutionResult().getData();
 		assertThat(data).isEqualTo(Map.of("greeting", "hi"));
 		assertThat(dataLoaderRegistry.getDataLoaders()).hasSize(1);
+	}
+
+	@Test
+	void shouldHandleGraphQlErrors() {
+		ExecutionGraphQlResponse response = GraphQlSetup.schemaContent("type Query { greeting: String }")
+				.queryFetcher("greeting", (env) -> "hi")
+				.toGraphQlService()
+				.execute(new DefaultExecutionGraphQlRequest("{ greeting }", "unknown", null, null, "uniqueId", null))
+				.block();
+
+		assertThat(response.getExecutionResult().getErrors()).singleElement()
+				.hasFieldOrPropertyWithValue("errorType", ErrorType.ValidationError);
+	}
+
+	@Test
+	@Disabled("until https://github.com/spring-projects/spring-graphql/issues/1171")
+	void cancellationSupport() {
+		AtomicBoolean cancelled = new AtomicBoolean();
+		Mono<String> greetingMono = Mono.just("hi")
+				.delayElement(Duration.ofSeconds(3))
+				.doOnCancel(() -> cancelled.set(true));
+
+		Mono<ExecutionGraphQlResponse> execution = GraphQlSetup.schemaContent("type Query { greeting: String }")
+				.queryFetcher("greeting", (env) -> greetingMono)
+				.toGraphQlService()
+				.execute(TestExecutionRequest.forDocument("{ greeting }"));
+
+		StepVerifier.create(execution).thenCancel().verify();
+		assertThat(cancelled).isTrue();
 	}
 
 }

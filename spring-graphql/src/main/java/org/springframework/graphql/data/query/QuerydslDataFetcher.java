@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingFieldSelectionSet;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -54,7 +55,6 @@ import org.springframework.graphql.data.pagination.CursorStrategy;
 import org.springframework.graphql.data.query.AutoRegistrationRuntimeWiringConfigurer.DataFetcherFactory;
 import org.springframework.graphql.execution.RuntimeWiringConfigurer;
 import org.springframework.graphql.execution.SelfDescribingDataFetcher;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -106,7 +106,7 @@ import org.springframework.util.MultiValueMap;
  */
 public abstract class QuerydslDataFetcher<T> {
 
-	private static final Log logger = LogFactory.getLog(QueryByExampleDataFetcher.class);
+	private static final Log logger = LogFactory.getLog(QuerydslDataFetcher.class);
 
 	private static final QuerydslPredicateBuilder BUILDER = new QuerydslPredicateBuilder(
 			DefaultConversionService.getSharedInstance(), SimpleEntityPathResolver.INSTANCE);
@@ -142,21 +142,31 @@ public abstract class QuerydslDataFetcher<T> {
 	 * @param environment contextual info for the GraphQL request
 	 * @return the resulting predicate
 	 */
-	@SuppressWarnings({"unchecked"})
 	protected Predicate buildPredicate(DataFetchingEnvironment environment) {
-		MultiValueMap<String, Object> parameters = new LinkedMultiValueMap<>();
 		QuerydslBindings bindings = new QuerydslBindings();
-
 		EntityPath<?> path = SimpleEntityPathResolver.INSTANCE.createPath(this.domainType.getType());
 		this.customizer.customize(bindings, path);
 
-		for (Map.Entry<String, Object> entry : getArgumentValues(environment).entrySet()) {
-			Object value = entry.getValue();
-			List<Object> values = (value instanceof List) ? (List<Object>) value : Collections.singletonList(value);
-			parameters.put(entry.getKey(), values);
-		}
+		MultiValueMap<String, Object> parameters = new LinkedMultiValueMap<>();
+		addParameters(null, getArgumentValues(environment), parameters);
 
 		return BUILDER.getPredicate(this.domainType, parameters, bindings);
+	}
+
+	@SuppressWarnings("unchecked")
+	private void addParameters(
+			@Nullable String prefix, Map<String, Object> arguments, MultiValueMap<String, Object> parameters) {
+
+		for (Map.Entry<String, Object> entry : arguments.entrySet()) {
+			String key = ((prefix != null) ? prefix + "." : "") + entry.getKey();
+			Object value = entry.getValue();
+			if (value instanceof Map<?, ?> nested) {
+				addParameters(key, (Map<String, Object>) nested, parameters);
+				continue;
+			}
+			List<Object> values = (value instanceof List) ? (List<Object>) value : Collections.singletonList(value);
+			parameters.put(key, values);
+		}
 	}
 
 	/**
@@ -365,14 +375,11 @@ public abstract class QuerydslDataFetcher<T> {
 
 		private final Class<R> resultType;
 
-		@Nullable
-		private final CursorStrategy<ScrollPosition> cursorStrategy;
+		private final @Nullable CursorStrategy<ScrollPosition> cursorStrategy;
 
-		@Nullable
-		private final Integer defaultScrollCount;
+		private final @Nullable Integer defaultScrollCount;
 
-		@Nullable
-		private final Function<Boolean, ScrollPosition> defaultScrollPosition;
+		private final @Nullable Function<Boolean, ScrollPosition> defaultScrollPosition;
 
 		private final Sort sort;
 
@@ -570,14 +577,11 @@ public abstract class QuerydslDataFetcher<T> {
 
 		private final Class<R> resultType;
 
-		@Nullable
-		private final CursorStrategy<ScrollPosition> cursorStrategy;
+		private final @Nullable CursorStrategy<ScrollPosition> cursorStrategy;
 
-		@Nullable
-		private final Integer defaultScrollCount;
+		private final @Nullable Integer defaultScrollCount;
 
-		@Nullable
-		private final Function<Boolean, ScrollPosition> defaultScrollPosition;
+		private final @Nullable Function<Boolean, ScrollPosition> defaultScrollPosition;
 
 		private final Sort sort;
 
@@ -788,7 +792,7 @@ public abstract class QuerydslDataFetcher<T> {
 
 		@Override
 		@SuppressWarnings({"ConstantConditions", "unchecked"})
-		public R get(DataFetchingEnvironment env) {
+		public @Nullable R get(DataFetchingEnvironment env) {
 			return this.executor.findBy(buildPredicate(env), (query) -> {
 				FetchableFluentQuery<R> queryToUse = (FetchableFluentQuery<R>) query;
 

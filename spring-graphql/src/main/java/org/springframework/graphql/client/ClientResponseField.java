@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,11 @@ package org.springframework.graphql.client;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.graphql.GraphQlResponse;
 import org.springframework.graphql.ResponseField;
-import org.springframework.lang.Nullable;
 
 /**
  * Extends {@link ResponseField} to add options for decoding the field value.
@@ -42,16 +43,14 @@ public interface ClientResponseField extends ResponseField {
 	 * response is not {@link GraphQlResponse#isValid() valid} or the field has
 	 * {@link ResponseField#getErrors() errors}.
 	 */
-	@Nullable
-	<D> D toEntity(Class<D> entityType);
+	@Nullable <D> D toEntity(Class<D> entityType);
 
 	/**
 	 * Variant of {@link #toEntity(Class)} with a {@link ParameterizedTypeReference}.
 	 * @param <D> the entity type
 	 * @param entityType the type to convert to
 	 */
-	@Nullable
-	<D> D toEntity(ParameterizedTypeReference<D> entityType);
+	@Nullable <D> D toEntity(ParameterizedTypeReference<D> entityType);
 
 	/**
 	 * Variant of {@link #toEntity(Class)} to decode to a list of entities.

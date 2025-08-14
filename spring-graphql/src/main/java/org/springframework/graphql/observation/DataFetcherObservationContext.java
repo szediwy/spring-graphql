@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2022 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.graphql.observation;
 
 import graphql.schema.DataFetchingEnvironment;
 import io.micrometer.observation.Observation;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Context that holds information for metadata collection during observations
@@ -30,7 +31,7 @@ public class DataFetcherObservationContext extends Observation.Context {
 
 	private final DataFetchingEnvironment environment;
 
-	private Object value;
+	private @Nullable Object value;
 
 	DataFetcherObservationContext(DataFetchingEnvironment environment) {
 		this.environment = environment;
@@ -47,11 +48,11 @@ public class DataFetcherObservationContext extends Observation.Context {
 	 * Return the value returned by the {@link graphql.schema.DataFetcher}, if any.
 	 * @see #getError() for the exception thrown by the data fetcher.
 	 */
-	public Object getValue() {
+	public @Nullable Object getValue() {
 		return this.value;
 	}
 
-	void setValue(Object value) {
+	void setValue(@Nullable Object value) {
 		this.value = value;
 	}
 }

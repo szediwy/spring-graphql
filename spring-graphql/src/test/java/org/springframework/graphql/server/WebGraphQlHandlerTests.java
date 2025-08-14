@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Tests for {@link WebGraphQlHandler}, common to both HTTP and WebSocket.
  */
-public class WebGraphQlHandlerTests {
+class WebGraphQlHandlerTests {
 
 	private static final WebGraphQlRequest webInput = new WebGraphQlRequest(
 			URI.create("https://abc.org"), new HttpHeaders(), null, null, Collections.emptyMap(),

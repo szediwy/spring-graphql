@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,15 @@ package org.springframework.graphql.test.tester;
 
 import java.time.Duration;
 import java.util.Collections;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
 import com.jayway.jsonpath.Configuration;
-import com.jayway.jsonpath.spi.json.JacksonJsonProvider;
-import com.jayway.jsonpath.spi.mapper.JacksonMappingProvider;
+import com.jayway.jsonpath.spi.json.JsonProvider;
 import com.jayway.jsonpath.spi.mapper.MappingProvider;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -34,11 +35,11 @@ import org.springframework.graphql.GraphQlRequest;
 import org.springframework.graphql.GraphQlResponse;
 import org.springframework.graphql.ResponseError;
 import org.springframework.graphql.client.AbstractGraphQlClientBuilder;
+import org.springframework.graphql.client.ClientGraphQlRequest;
 import org.springframework.graphql.client.GraphQlClient;
 import org.springframework.graphql.client.GraphQlTransport;
 import org.springframework.graphql.support.DocumentSource;
 import org.springframework.graphql.support.ResourceDocumentSource;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 
@@ -58,14 +59,16 @@ import org.springframework.util.ClassUtils;
  */
 public abstract class AbstractGraphQlTesterBuilder<B extends AbstractGraphQlTesterBuilder<B>> implements GraphQlTester.Builder<B> {
 
+	private static final boolean jacksonPresent = ClassUtils.isPresent(
+			"tools.jackson.databind.ObjectMapper", AbstractGraphQlClientBuilder.class.getClassLoader());
+
 	private static final boolean jackson2Present = ClassUtils.isPresent(
 			"com.fasterxml.jackson.databind.ObjectMapper", AbstractGraphQlClientBuilder.class.getClassLoader());
 
 	private static final Duration DEFAULT_RESPONSE_DURATION = Duration.ofSeconds(5);
 
 
-	@Nullable
-	private Predicate<ResponseError> errorFilter;
+	private @Nullable Predicate<ResponseError> errorFilter;
 
 	private DocumentSource documentSource;
 
@@ -129,7 +132,10 @@ public abstract class AbstractGraphQlTesterBuilder<B extends AbstractGraphQlTest
 	 */
 	protected GraphQlTester buildGraphQlTester(GraphQlTransport transport) {
 
-		if (jackson2Present) {
+		if (jacksonPresent) {
+			configureJsonPathConfig(JacksonConfigurer::configure);
+		}
+		else if (jackson2Present) {
 			configureJsonPathConfig(Jackson2Configurer::configure);
 		}
 
@@ -167,6 +173,8 @@ public abstract class AbstractGraphQlTesterBuilder<B extends AbstractGraphQlTest
 						.document(request.getDocument())
 						.operationName(request.getOperationName())
 						.variables(request.getVariables())
+						.extensions(request.getExtensions())
+						.attributes((map) -> copyAttributes(map, request))
 						.execute()
 						.cast(GraphQlResponse.class);
 			}
@@ -177,15 +185,21 @@ public abstract class AbstractGraphQlTesterBuilder<B extends AbstractGraphQlTest
 						.document(request.getDocument())
 						.operationName(request.getOperationName())
 						.variables(request.getVariables())
+						.extensions(request.getExtensions())
+						.attributes((map) -> copyAttributes(map, request))
 						.executeSubscription()
 						.cast(GraphQlResponse.class);
+			}
+
+			private static void copyAttributes(Map<String, Object> map, GraphQlRequest request) {
+				if (request instanceof ClientGraphQlRequest clientGraphQlRequest) {
+					map.putAll(clientGraphQlRequest.getAttributes());
+				}
 			}
 		};
 	}
 
-
-	private static final class Jackson2Configurer {
-
+	private abstract static class AbstractJacksonConfigurer {
 		private static final Class<?> defaultJsonProviderType;
 
 		private static final Class<?> defaultMappingProviderType;
@@ -199,18 +213,35 @@ public abstract class AbstractGraphQlTesterBuilder<B extends AbstractGraphQlTest
 		// GraphQlTransport returns ExecutionResult with JSON parsed to Map/List,
 		// but we still need JsonProvider for matchesJson(String)
 
-		static Configuration configure(Configuration config) {
+		static Configuration configure(Configuration config, JsonProvider jsonProvider, MappingProvider mappingProvider) {
 			if (isDefault(config.jsonProvider(), defaultJsonProviderType)) {
-				config = config.jsonProvider(new JacksonJsonProvider());
+				config = config.jsonProvider(jsonProvider);
 			}
 			if (isDefault(config.mappingProvider(), defaultMappingProviderType)) {
-				config = config.mappingProvider(new JacksonMappingProvider());
+				config = config.mappingProvider(mappingProvider);
 			}
 			return config;
 		}
 
-		private static <T> boolean isDefault(@Nullable T provider, Class<? extends T> defaultProviderType) {
+		static <T> boolean isDefault(@Nullable T provider, Class<? extends T> defaultProviderType) {
 			return (provider == null || defaultProviderType.isInstance(provider));
+		}
+
+	}
+
+	private static final class JacksonConfigurer extends AbstractJacksonConfigurer {
+
+		static Configuration configure(Configuration config) {
+			return configure(config, new JacksonJsonProvider(), new JacksonMappingProvider());
+		}
+
+	}
+
+	private static final class Jackson2Configurer extends AbstractJacksonConfigurer {
+
+		static Configuration configure(Configuration config) {
+			return configure(config, new com.jayway.jsonpath.spi.json.JacksonJsonProvider(),
+					new com.jayway.jsonpath.spi.mapper.JacksonMappingProvider());
 		}
 
 	}

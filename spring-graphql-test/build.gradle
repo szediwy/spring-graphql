@@ -14,11 +14,14 @@ dependencies {
 	compileOnly 'org.springframework:spring-websocket'
 	compileOnly 'org.springframework:spring-messaging'
 	compileOnly 'jakarta.servlet:jakarta.servlet-api'
+	compileOnly 'tools.jackson.core:jackson-databind'
+	compileOnly 'com.fasterxml.jackson.core:jackson-databind'
 	compileOnly 'io.rsocket:rsocket-core'
 	compileOnly 'io.rsocket:rsocket-transport-netty'
 	compileOnly 'org.skyscreamer:jsonassert'
 	compileOnly 'com.google.code.findbugs:jsr305'
 	compileOnly 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
+	compileOnly 'org.hamcrest:hamcrest'
 
 	testImplementation(testFixtures(project(":spring-graphql")))
 	testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -32,15 +35,14 @@ dependencies {
 	testImplementation 'io.projectreactor.netty:reactor-netty'
 	testImplementation 'io.rsocket:rsocket-transport-local'
 	testImplementation 'io.micrometer:context-propagation'
+	testImplementation 'tools.jackson.core:jackson-databind'
 	testImplementation 'com.fasterxml.jackson.core:jackson-databind'
 
 	testRuntimeOnly 'org.apache.logging.log4j:log4j-core'
 	testRuntimeOnly 'org.apache.logging.log4j:log4j-slf4j-impl'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 test {
 	useJUnitPlatform()
-	testLogging {
-		events "passed", "skipped", "failed"
-	}
 }

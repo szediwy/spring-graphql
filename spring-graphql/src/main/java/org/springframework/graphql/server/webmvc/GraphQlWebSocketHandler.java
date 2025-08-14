@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ import io.micrometer.context.ContextSnapshot;
 import io.micrometer.context.ContextSnapshotFactory;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.publisher.BaseSubscriber;
@@ -59,11 +60,9 @@ import org.springframework.graphql.server.support.GraphQlWebSocketMessage;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpOutputMessage;
-import org.springframework.http.converter.GenericHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.socket.CloseStatus;
@@ -102,10 +101,9 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 
 	private final Duration initTimeoutDuration;
 
-	private final HttpMessageConverter<?> converter;
+	private final HttpMessageConverter<Object> converter;
 
-	@Nullable
-	private final Duration keepAliveDuration;
+	private final @Nullable Duration keepAliveDuration;
 
 	private final Map<String, SessionState> sessionInfoMap = new ConcurrentHashMap<>();
 
@@ -118,7 +116,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 	 * the WebSocket for the {@code "connection_ini"} message from the client.
 	 */
 	public GraphQlWebSocketHandler(
-			WebGraphQlHandler graphQlHandler, HttpMessageConverter<?> converter, Duration connectionInitTimeout) {
+			WebGraphQlHandler graphQlHandler, HttpMessageConverter<Object> converter, Duration connectionInitTimeout) {
 
 		this(graphQlHandler, converter, connectionInitTimeout, null);
 	}
@@ -129,12 +127,12 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 	 * @param converter for JSON encoding and decoding
 	 * @param connectionInitTimeout how long to wait after the establishment of
 	 * the WebSocket for the {@code "connection_ini"} message from the client.
-	 * @param keepAliveDuration how frequently to send ping messages; if not
-	 * set then ping messages are not sent.
+	 * @param keepAliveDuration how frequently to send ping messages when no
+	 * other messages are sent
 	 * @since 1.3
 	 */
 	public GraphQlWebSocketHandler(
-			WebGraphQlHandler graphQlHandler, HttpMessageConverter<?> converter,
+			WebGraphQlHandler graphQlHandler, HttpMessageConverter<Object> converter,
 			Duration connectionInitTimeout, @Nullable Duration keepAliveDuration) {
 
 		Assert.notNull(graphQlHandler, "WebGraphQlHandler is required");
@@ -164,18 +162,6 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 		WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(this, handshakeHandler);
 		handler.setHandshakeInterceptors(Collections.singletonList(this.contextHandshakeInterceptor));
 		return handler;
-	}
-
-	/**
-	 * Return a {@link WebSocketHttpRequestHandler} that uses this instance as
-	 * its {@link WebGraphQlHandler} and adds a {@link HandshakeInterceptor} to
-	 * propagate context.
-	 * @param handshakeHandler the handler for WebSocket handshake
-	 * @deprecated as of 1.1.0 in favor of {@link #initWebSocketHttpRequestHandler(HandshakeHandler)}
-	 */
-	@Deprecated(since = "1.1.0", forRemoval = true)
-	public WebSocketHttpRequestHandler asWebSocketHttpRequestHandler(HandshakeHandler handshakeHandler) {
-		return initWebSocketHttpRequestHandler(handshakeHandler);
 	}
 
 
@@ -302,10 +288,9 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 		}
 	}
 
-	@SuppressWarnings("unchecked")
 	private GraphQlWebSocketMessage decode(TextMessage message) throws IOException {
-		return ((GenericHttpMessageConverter<GraphQlWebSocketMessage>) this.converter)
-				.read(GraphQlWebSocketMessage.class, null, new HttpInputMessageAdapter(message));
+		return (GraphQlWebSocketMessage) this.converter
+				.read(GraphQlWebSocketMessage.class, new HttpInputMessageAdapter(message));
 	}
 
 	private SessionState getSessionInfo(WebSocketSession session) {
@@ -347,12 +332,19 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 						GraphQlStatus.closeSession(session, status);
 						return Flux.empty();
 					}
-					List<GraphQLError> errors = ((ex instanceof SubscriptionPublisherException) ?
-							((SubscriptionPublisherException) ex).getErrors() :
-							Collections.singletonList(GraphqlErrorBuilder.newError()
-									.message("Subscription error")
-									.errorType(ErrorType.INTERNAL_ERROR)
-									.build()));
+					List<GraphQLError> errors;
+					if (ex instanceof SubscriptionPublisherException subscriptionEx) {
+						errors = subscriptionEx.getErrors();
+					}
+					else {
+						if (logger.isErrorEnabled()) {
+							logger.error("Unresolved " + ex.getClass().getSimpleName() + " for request id " + id, ex);
+						}
+						errors = Collections.singletonList(GraphqlErrorBuilder.newError()
+								.message("Subscription error")
+								.errorType(ErrorType.INTERNAL_ERROR)
+								.build());
+					}
 					return Mono.just(encode(GraphQlWebSocketMessage.error(id, errors)));
 				});
 	}
@@ -500,8 +492,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 			return this.sessionInfo;
 		}
 
-		@Nullable
-		Map<String, Object> getConnectionInitPayload() {
+		@Nullable Map<String, Object> getConnectionInitPayload() {
 			return this.connectionInitPayloadRef.get();
 		}
 
@@ -558,8 +549,9 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 
 		@Override
 		public URI getUri() {
-			Assert.notNull(this.session.getUri(), "Expected URI");
-			return this.session.getUri();
+			URI uri = this.session.getUri();
+			Assert.notNull(uri, "Expected URI");
+			return uri;
 		}
 
 		@Override
@@ -573,7 +565,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 		}
 
 		@Override
-		public InetSocketAddress getRemoteAddress() {
+		public @Nullable InetSocketAddress getRemoteAddress() {
 			return this.session.getRemoteAddress();
 		}
 
@@ -609,6 +601,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 				request(1);
 			}
 			catch (IOException ex) {
+				cancel();
 				ExceptionWebSocketHandlerDecorator.tryCloseWithError(this.session, ex, logger);
 			}
 		}

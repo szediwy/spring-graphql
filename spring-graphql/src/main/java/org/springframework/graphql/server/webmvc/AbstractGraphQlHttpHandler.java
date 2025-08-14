@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -37,12 +38,12 @@ import org.springframework.graphql.server.WebGraphQlResponse;
 import org.springframework.graphql.server.support.SerializableGraphQlRequest;
 import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.http.server.ServletServerHttpResponse;
-import org.springframework.lang.Nullable;
 import org.springframework.util.AlternativeJdkIdGenerator;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
@@ -52,6 +53,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.server.ServerWebInputException;
+import org.springframework.web.server.UnsupportedMediaTypeStatusException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
@@ -67,12 +69,13 @@ public abstract class AbstractGraphQlHttpHandler {
 
 	protected final Log logger = LogFactory.getLog(getClass());
 
+	private static final MediaType APPLICATION_GRAPHQL = MediaType.parseMediaType("application/graphql");
+
 	private final IdGenerator idGenerator = new AlternativeJdkIdGenerator();
 
 	private final WebGraphQlHandler graphQlHandler;
 
-	@Nullable
-	private final HttpMessageConverter<Object> messageConverter;
+	private final @Nullable HttpMessageConverter<Object> messageConverter;
 
 
 	@SuppressWarnings("unchecked")
@@ -93,8 +96,7 @@ public abstract class AbstractGraphQlHttpHandler {
 	 * @return the write function, or {@code null} if a
 	 * {@code HttpMessageConverter} was not provided to the constructor
 	 */
-	@Nullable
-	protected ServerResponse.HeadersBuilder.WriteFunction getWriteFunction(
+	protected ServerResponse.HeadersBuilder.@Nullable WriteFunction getWriteFunction(
 			Map<String, Object> resultMap, MediaType contentType) {
 
 		return (this.messageConverter != null) ?
@@ -146,7 +148,15 @@ public abstract class AbstractGraphQlHttpHandler {
 	private GraphQlRequest readBody(ServerRequest request) throws ServletException {
 		try {
 			if (this.messageConverter != null) {
-				MediaType contentType = request.headers().contentType().orElse(MediaType.APPLICATION_JSON);
+				ServerRequest.Headers headers = request.headers();
+				MediaType contentType;
+				try {
+					contentType = headers.contentType().orElse(MediaType.APPLICATION_OCTET_STREAM);
+				}
+				catch (InvalidMediaTypeException ex) {
+					throw new UnsupportedMediaTypeStatusException("Could not parse " +
+							"Content-Type [" + headers.firstHeader(HttpHeaders.CONTENT_TYPE) + "]: " + ex.getMessage());
+				}
 				if (this.messageConverter.canRead(SerializableGraphQlRequest.class, contentType)) {
 					ServerHttpRequest httpRequest = new ServletServerHttpRequest(request.servletRequest());
 					return (GraphQlRequest) this.messageConverter.read(SerializableGraphQlRequest.class, httpRequest);
@@ -174,9 +184,8 @@ public abstract class AbstractGraphQlHttpHandler {
 		String contentTypeHeader = request.headers().firstHeader(HttpHeaders.CONTENT_TYPE);
 		if (StringUtils.hasText(contentTypeHeader)) {
 			MediaType contentType = MediaType.parseMediaType(contentTypeHeader);
-			MediaType applicationGraphQl = MediaType.parseMediaType("application/graphql");
 			// Spec requires application/json but some clients still use application/graphql
-			if (applicationGraphQl.includes(contentType)) {
+			if (APPLICATION_GRAPHQL.includes(contentType)) {
 				try {
 					request = ServerRequest.from(request)
 							.headers((headers) -> headers.setContentType(MediaType.APPLICATION_JSON))
@@ -210,7 +219,7 @@ public abstract class AbstractGraphQlHttpHandler {
 			implements ServerResponse.HeadersBuilder.WriteFunction {
 
 		@Override
-		public ModelAndView write(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		public @Nullable ModelAndView write(HttpServletRequest request, HttpServletResponse response) throws Exception {
 			ServletServerHttpResponse httpResponse = new ServletServerHttpResponse(response);
 			this.converter.write(this.resultMap, this.contentType, httpResponse);
 			return null;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2023 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @author Rossen Stoyanchev
  */
-public class SortMethodArgumentResolverTests extends ArgumentResolverTestSupport {
+class SortMethodArgumentResolverTests extends ArgumentResolverTestSupport {
 
 	private final SortMethodArgumentResolver resolver = new SortMethodArgumentResolver(new MySortStrategy());
 
@@ -65,7 +65,7 @@ public class SortMethodArgumentResolverTests extends ArgumentResolverTestSupport
 
 	private void testResolver(Function<DataFetchingEnvironment, Sort> resolveFunction) throws Exception {
 		DataFetchingEnvironment environment = environment("""
-			{ "sortFields": ["firstName", "lastName", "id"], "sortDirection": "DESC"}"
+			{ "sortFields": ["firstName", "lastName", "id"], "sortDirection": "DESC" }
 		""");
 
 		Sort sort = resolveFunction.apply(environment);

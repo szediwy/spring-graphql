@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,16 +19,19 @@ package org.springframework.graphql.data.federation;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Future;
 
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
+import org.dataloader.DataLoader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
@@ -52,13 +55,14 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 /**
  * Tests for requests handled through {@code @EntityMapping} methods.
  *
  * @author Rossen Stoyanchev
  */
-public class EntityMappingInvocationTests {
+class EntityMappingInvocationTests {
 
 	private static final Resource federationSchema = new ClassPathResource("books/federation-schema.graphqls");
 
@@ -173,6 +177,25 @@ public class EntityMappingInvocationTests {
 		assertError(helper, 0, "INTERNAL_ERROR", "Entity fetcher returned null or completed empty");
 		assertError(helper, 1, "INTERNAL_ERROR", "Entity fetcher returned null or completed empty");
 		assertError(helper, 2, "INTERNAL_ERROR", "Entity fetcher returned null or completed empty");
+	}
+
+	@Test
+	void dataLoader() {
+		Map<String, Object> variables =
+				Map.of("representations", List.of(
+						Map.of("__typename", "Book", "id", "3"),
+						Map.of("__typename", "Book", "id", "5")));
+
+		ResponseHelper helper = executeWith(DataLoaderBookController.class, variables);
+
+		assertAuthor(0, "Joseph", "Heller", helper);
+		assertAuthor(1, "George", "Orwell", helper);
+	}
+
+	@Test
+	void unmappedEntity() {
+		assertThatIllegalStateException().isThrownBy(() -> executeWith(EmptyController.class, Map.of()))
+				.withMessage("Unmapped entity types: 'Book'");
 	}
 
 	private static ResponseHelper executeWith(Class<?> controllerClass, Map<String, Object> variables) {
@@ -296,6 +319,37 @@ public class EntityMappingInvocationTests {
 		public GraphQLError handle(IllegalArgumentException ex, DataFetchingEnvironment env) {
 			return this.batchService.handle(ex, env);
 		}
+	}
+
+
+	@SuppressWarnings("unused")
+	@Controller
+	private static class DataLoaderBookController {
+
+		@Autowired
+		public DataLoaderBookController(BatchLoaderRegistry batchLoaderRegistry) {
+			batchLoaderRegistry.forTypePair(Integer.class, Book.class)
+					.registerBatchLoader((ids, env) ->
+							Flux.fromIterable(ids).map(id -> new Book((long) id, null, (Long) null)));
+		}
+
+		@Nullable
+		@EntityMapping
+		public Future<Book> book(@Argument int id, DataLoader<Integer, Book> dataLoader) {
+			return dataLoader.load(id);
+		}
+
+		@BatchMapping
+		public Flux<Author> author(List<Book> books) {
+			return Flux.fromIterable(books).map(book -> BookSource.getBook(book.getId()).getAuthor());
+		}
+	}
+
+
+	@SuppressWarnings("unused")
+	@Controller
+	private static class EmptyController {
+
 	}
 
 

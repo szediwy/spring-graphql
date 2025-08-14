@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -46,6 +45,7 @@ import graphql.schema.GraphQLCodeRegistry;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import org.dataloader.DataLoader;
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -77,14 +77,12 @@ import org.springframework.graphql.execution.ReactiveAdapterRegistryHelper;
 import org.springframework.graphql.execution.RuntimeWiringConfigurer;
 import org.springframework.graphql.execution.SelfDescribingDataFetcher;
 import org.springframework.graphql.execution.SubscriptionPublisherException;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
-import org.springframework.validation.DataBinder;
 
 
 /**
@@ -131,8 +129,7 @@ public class AnnotatedControllerConfigurer
 
 	private final InterfaceMappingHelper interfaceMappingHelper = new InterfaceMappingHelper();
 
-	@Nullable
-	private ValidationHelper validationHelper;
+	private @Nullable ValidationHelper validationHelper;
 
 
 	/**
@@ -149,17 +146,6 @@ public class AnnotatedControllerConfigurer
 	@Override
 	public void setTypeDefinitionRegistry(TypeDefinitionRegistry registry) {
 		this.interfaceMappingHelper.setTypeDefinitionRegistry(registry);
-	}
-
-	/**
-	 * Configure an initializer that configures the {@link DataBinder} before the binding process.
-	 * @param consumer the data binder initializer
-	 * @since 1.0.1
-	 * @deprecated this property is deprecated, ignored, and should not be
-	 * necessary as a {@link DataBinder} is no longer used to bind arguments
-	 */
-	@Deprecated(since = "1.1.0", forRemoval = true)
-	public void setDataBinderInitializer(@Nullable Consumer<DataBinder> consumer) {
 	}
 
 
@@ -183,8 +169,7 @@ public class AnnotatedControllerConfigurer
 			resolvers.addResolver(new ProjectedPayloadMethodArgumentResolver(obtainApplicationContext()));
 		}
 
-		GraphQlArgumentBinder argumentBinder =
-				new GraphQlArgumentBinder(getConversionService(), isFallBackOnDirectFieldAccess());
+		GraphQlArgumentBinder argumentBinder = new GraphQlArgumentBinder(getBinderOptions());
 
 		resolvers.addResolver(new ArgumentMethodArgumentResolver(argumentBinder));
 		resolvers.addResolver(new ArgumentsMethodArgumentResolver(argumentBinder));
@@ -265,7 +250,7 @@ public class AnnotatedControllerConfigurer
 	}
 
 	@Override
-	protected DataFetcherMappingInfo getMappingInfo(Method method, Object handler, Class<?> handlerType) {
+	protected @Nullable DataFetcherMappingInfo getMappingInfo(Method method, Object handler, Class<?> handlerType) {
 		Set<Annotation> annotations = AnnotatedElementUtils.findAllMergedAnnotations(
 				method, new LinkedHashSet<>(Arrays.asList(BatchMapping.class, SchemaMapping.class)));
 
@@ -447,17 +432,17 @@ public class AnnotatedControllerConfigurer
 
 		private final HandlerMethodArgumentResolverComposite argumentResolvers;
 
-		@Nullable
-		private final BiConsumer<Object, Object[]> methodValidationHelper;
+		private final @Nullable BiConsumer<Object, @Nullable Object[]> methodValidationHelper;
 
 		private final HandlerDataFetcherExceptionResolver exceptionResolver;
 
-		@Nullable
-		private final Executor executor;
+		private final @Nullable Executor executor;
 
 		private final boolean invokeAsync;
 
 		private final boolean subscription;
+
+		private final boolean usesDataLoader;
 
 		SchemaMappingDataFetcher(
 				DataFetcherMappingInfo info, HandlerMethodArgumentResolverComposite argumentResolvers,
@@ -475,6 +460,16 @@ public class AnnotatedControllerConfigurer
 			this.executor = executor;
 			this.invokeAsync = invokeAsync;
 			this.subscription = this.mappingInfo.getCoordinates().getTypeName().equalsIgnoreCase("Subscription");
+			this.usesDataLoader = hasDataLoaderParameter(info.getHandlerMethod());
+		}
+
+		private static boolean hasDataLoaderParameter(HandlerMethod method) {
+			for (MethodParameter type : method.getMethodParameters()) {
+				if (DataLoader.class.equals(type.getParameterType())) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		@Override
@@ -484,7 +479,11 @@ public class AnnotatedControllerConfigurer
 
 		@Override
 		public ResolvableType getReturnType() {
-			return ResolvableType.forMethodReturnType(this.mappingInfo.getHandlerMethod().getMethod());
+			return ResolvableType.forMethodReturnType(getHandlerMethod().getMethod());
+		}
+
+		HandlerMethod getHandlerMethod() {
+			return this.mappingInfo.getHandlerMethod();
 		}
 
 		@Override
@@ -493,7 +492,7 @@ public class AnnotatedControllerConfigurer
 			Predicate<MethodParameter> argumentPredicate = (p) ->
 					(p.getParameterAnnotation(Argument.class) != null || p.getParameterType() == ArgumentValue.class);
 
-			return Arrays.stream(this.mappingInfo.getHandlerMethod().getMethodParameters())
+			return Arrays.stream(getHandlerMethod().getMethodParameters())
 					.filter(argumentPredicate)
 					.peek((p) -> p.initParameterNameDiscovery(parameterNameDiscoverer))
 					.collect(Collectors.toMap(
@@ -501,16 +500,14 @@ public class AnnotatedControllerConfigurer
 							ResolvableType::forMethodParameter));
 		}
 
-		/**
-		 * Return the {@link HandlerMethod} used to fetch data.
-		 */
-		HandlerMethod getHandlerMethod() {
-			return this.mappingInfo.getHandlerMethod();
+		@Override
+		public boolean usesDataLoader() {
+			return this.usesDataLoader;
 		}
 
 		@Override
 		@SuppressWarnings({"ConstantConditions", "ReactiveStreamsUnusedPublisher"})
-		public Object get(DataFetchingEnvironment environment) throws Exception {
+		public @Nullable Object get(DataFetchingEnvironment environment) throws Exception {
 
 			DataFetcherHandlerMethod handlerMethod = new DataFetcherHandlerMethod(
 					getHandlerMethod(), this.argumentResolvers, this.methodValidationHelper,
@@ -526,9 +523,8 @@ public class AnnotatedControllerConfigurer
 		}
 
 		@SuppressWarnings({"unchecked", "ReactiveStreamsUnusedPublisher"})
-		@Nullable
-		private <T> Object applyExceptionHandling(
-				DataFetchingEnvironment env, DataFetcherHandlerMethod handlerMethod, Object result) {
+		private @Nullable <T> Object applyExceptionHandling(
+				DataFetchingEnvironment env, DataFetcherHandlerMethod handlerMethod, @Nullable Object result) {
 
 			if (this.subscription) {
 				return ReactiveAdapterRegistryHelper.toSubscriptionFlux(result)
@@ -601,9 +597,17 @@ public class AnnotatedControllerConfigurer
 
 		@Override
 		public Object get(DataFetchingEnvironment env) {
-			DataLoader<?, ?> dataLoader = env.getDataLoaderRegistry().getDataLoader(this.dataLoaderKey);
-			Assert.state(dataLoader != null, "No DataLoader for key '" + this.dataLoaderKey + "'");
-			return dataLoader.load(env.getSource());
+			DataLoader<?, ?> dataLoader = env.getDataLoader(this.dataLoaderKey);
+			Assert.state(dataLoader != null, () -> "No DataLoader for key '" + this.dataLoaderKey + "'");
+			Assert.state(env.getSource() != null, () -> "Missing Source in environment");
+			return ((env.getLocalContext() != null) ?
+					dataLoader.load(env.getSource(), env.getLocalContext()) :
+					dataLoader.load(env.getSource()));
+		}
+
+		@Override
+		public boolean usesDataLoader() {
+			return true;
 		}
 
 		@Override

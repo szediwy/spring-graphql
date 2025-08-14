@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import graphql.schema.DataFetchingEnvironment;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.data.domain.Sort;
-import org.springframework.lang.Nullable;
 import org.springframework.util.ObjectUtils;
 
 /**
@@ -48,7 +48,7 @@ public abstract class AbstractSortStrategy implements SortStrategy {
 			}
 			return Sort.by(sortOrders);
 		}
-		return null;
+		return Sort.unsorted();
 	}
 
 	/**
@@ -61,7 +61,6 @@ public abstract class AbstractSortStrategy implements SortStrategy {
 	 * Return the sort direction to use, or {@code null}.
 	 * @param environment the data fetching environment for this operation
 	 */
-	@Nullable
-	protected abstract Sort.Direction getDirection(DataFetchingEnvironment environment);
+	protected abstract Sort.@Nullable Direction getDirection(DataFetchingEnvironment environment);
 
 }

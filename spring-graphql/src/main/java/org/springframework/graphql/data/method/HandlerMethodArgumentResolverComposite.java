@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2023 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import graphql.schema.DataFetchingEnvironment;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.core.MethodParameter;
-import org.springframework.lang.Nullable;
 
 /**
  * Container for a list of resolvers that looks for one that supports a given
@@ -74,8 +74,7 @@ public class HandlerMethodArgumentResolverComposite implements HandlerMethodArgu
 	 * @throws IllegalArgumentException if no suitable argument resolver is found
 	 */
 	@Override
-	@Nullable
-	public Object resolveArgument(MethodParameter parameter, DataFetchingEnvironment environment) throws Exception {
+	public @Nullable Object resolveArgument(MethodParameter parameter, DataFetchingEnvironment environment) throws Exception {
 		HandlerMethodArgumentResolver resolver = getArgumentResolver(parameter);
 		if (resolver == null) {
 			throw new IllegalArgumentException("Unsupported parameter [" + parameter + "].");
@@ -88,8 +87,7 @@ public class HandlerMethodArgumentResolverComposite implements HandlerMethodArgu
 	 * the given method parameter.
 	 * @param parameter the method parameter
 	 */
-	@Nullable
-	public HandlerMethodArgumentResolver getArgumentResolver(MethodParameter parameter) {
+	public @Nullable HandlerMethodArgumentResolver getArgumentResolver(MethodParameter parameter) {
 		return this.argumentResolverCache.computeIfAbsent(parameter, (p) -> {
 			for (HandlerMethodArgumentResolver resolver : this.argumentResolvers) {
 				if (resolver.supportsParameter(parameter)) {

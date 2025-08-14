@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import java.util.stream.Stream;
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.TypeRef;
 import com.jayway.jsonpath.spi.mapper.MappingProvider;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.core.ResolvableType;
 import org.springframework.core.codec.Decoder;
@@ -36,7 +37,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.codec.CodecConfigurer;
 import org.springframework.http.codec.DecoderHttpMessageReader;
 import org.springframework.http.codec.EncoderHttpMessageWriter;
-import org.springframework.lang.Nullable;
 import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
 
@@ -107,21 +107,18 @@ final class EncoderDecoderMappingProvider implements MappingProvider {
 	}
 
 
-	@Nullable
 	@Override
-	public <T> T map(Object source, Class<T> targetType, Configuration configuration) {
+	public @Nullable <T> T map(Object source, Class<T> targetType, Configuration configuration) {
 		return mapToTargetType(source, ResolvableType.forClass(targetType));
 	}
 
-	@Nullable
 	@Override
-	public <T> T map(Object source, TypeRef<T> targetType, Configuration configuration) {
+	public @Nullable <T> T map(Object source, TypeRef<T> targetType, Configuration configuration) {
 		return mapToTargetType(source, ResolvableType.forType(targetType.getType()));
 	}
 
 	@SuppressWarnings("unchecked")
-	@Nullable
-	private <T> T mapToTargetType(Object source, ResolvableType targetType) {
+	private @Nullable <T> T mapToTargetType(Object source, ResolvableType targetType) {
 
 		DataBufferFactory bufferFactory = DefaultDataBufferFactory.sharedInstance;
 		MimeType mimeType = MimeTypeUtils.APPLICATION_JSON;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -43,7 +44,6 @@ import org.springframework.http.HttpOutputMessage;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.GenericHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageConverter;
-import org.springframework.lang.Nullable;
 import org.springframework.util.MimeType;
 
 
@@ -62,11 +62,13 @@ final class HttpMessageConverterDelegate {
 	}
 
 	@SuppressWarnings("unchecked")
-	static HttpMessageConverter<Object> findJsonConverter(List<HttpMessageConverter<?>> converters) {
-		return (HttpMessageConverter<Object>) converters.stream()
-				.filter((converter) -> converter.canRead(Map.class, MediaType.APPLICATION_JSON))
-				.findFirst()
-				.orElseThrow(() -> new IllegalArgumentException("No JSON HttpMessageConverter"));
+	static HttpMessageConverter<Object> findJsonConverter(Iterable<HttpMessageConverter<?>> converters) {
+		for (HttpMessageConverter<?> converter : converters) {
+			if (converter.canRead(Map.class, MediaType.APPLICATION_JSON)) {
+				return (HttpMessageConverter<Object>) converter;
+			}
+		}
+		throw new IllegalArgumentException("No JSON HttpMessageConverter");
 	}
 
 	static HttpMessageConverterEncoder asEncoder(HttpMessageConverter<Object> converter) {
@@ -77,8 +79,7 @@ final class HttpMessageConverterDelegate {
 		return new HttpMessageConverterDecoder(converter);
 	}
 
-	@Nullable
-	private static MediaType toMediaType(@Nullable MimeType mimeType) {
+	private static @Nullable MediaType toMediaType(@Nullable MimeType mimeType) {
 		if (mimeType instanceof MediaType mediaType) {
 			return mediaType;
 		}
@@ -126,7 +127,8 @@ final class HttpMessageConverterDelegate {
 				return bufferFactory.wrap(messageAdapter.toByteArray());
 			}
 			catch (IOException ex) {
-				throw new EncodingException(ex.getMessage(), ex);
+				// TODO: revisit
+				throw new EncodingException("Error while encoding: " + ex.getMessage(), ex);
 			}
 		}
 

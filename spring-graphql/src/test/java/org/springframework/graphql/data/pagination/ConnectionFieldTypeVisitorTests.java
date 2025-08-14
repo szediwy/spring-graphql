@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @author Rossen Stoyanchev
  */
-public class ConnectionFieldTypeVisitorTests {
+class ConnectionFieldTypeVisitorTests {
 
 
 	@Test
@@ -205,6 +205,44 @@ public class ConnectionFieldTypeVisitorTests {
 			assertThat(actual).isSameAs(dataFetcher);
 		}
 
+		@Test
+		void connectionTypeWithNonNullEdgesIsDecorated() throws Exception {
+			String schemaContent = """
+					type Query {
+						libraries(first: Int, after: String, last: Int, before: String): LibraryConnection!
+					}
+
+					type LibraryConnection {
+						edges: [LibraryEdge!]!
+						pageInfo: PageInfo!
+					}
+
+					type LibraryEdge {
+						node: Library!
+						cursor: String!
+					}
+
+					type Library {
+						name: String
+					}
+
+					type PageInfo {
+						hasPreviousPage: Boolean!
+						hasNextPage: Boolean!
+						startCursor: String
+						endCursor: String
+					}
+					""";
+
+			FieldCoordinates coordinates = FieldCoordinates.coordinates("Query", "libraries");
+			DataFetcher<?> dataFetcher = env -> null;
+
+			DataFetcher<?> actual =
+					applyConnectionFieldTypeVisitor(schemaContent, coordinates, dataFetcher);
+
+			assertThat(actual).isInstanceOf(ConnectionFieldTypeVisitor.ConnectionDataFetcher.class);
+		}
+
 		private static DataFetcher<?> applyConnectionFieldTypeVisitor(
 				Object schemaSource, FieldCoordinates coordinates, DataFetcher<?> fetcher) throws Exception {
 
@@ -290,8 +328,6 @@ public class ConnectionFieldTypeVisitorTests {
 			}
 		}
 	}
-
-
 
 	private static class ListConnectionAdapter implements ConnectionAdapter {
 

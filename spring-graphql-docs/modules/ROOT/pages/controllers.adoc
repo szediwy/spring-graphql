@@ -214,12 +214,33 @@ See xref:controllers.adoc#controllers.schema-mapping.data-loader[`DataLoader`].
 
 Schema mapping handler methods can return:
 
-- A resolved value of any type.
-- `Mono` and `Flux` for asynchronous value(s). Supported for controller methods and for
-  any `DataFetcher` as described in xref:request-execution.adoc#execution.reactive-datafetcher[Reactive `DataFetcher`].
-- Kotlin coroutine and `Flow` are adapted to `Mono` and `Flux`.
-- `java.util.concurrent.Callable` to have the value(s) produced asynchronously.
-  For this to work, `AnnotatedControllerConfigurer` must be configured with an `Executor`.
+[cols="1,2"]
+|===
+| Return Value | Description
+
+| A resolved value `T`
+| Any application type directly resolved.
+
+| `Mono<T>` and `Flux<T>`
+| For asynchronous value(s).
+
+Supported for controller methods and for any `DataFetcher` as described in xref:request-execution.adoc#execution.reactive-datafetcher[Reactive `DataFetcher`].
+
+| Kotlin `suspend fun` and `Flow`
+| They are automatically adapted to `Mono` and `Flux`.
+
+| `java.util.concurrent.Callable<T>`
+| For producing value(s) asynchronously.
+For this to work, `AnnotatedControllerConfigurer` must be configured with an `Executor`.
+On Java 21+, returning `T` directly is enough. Read the paragraph after this table for more details.
+
+| `graphql.execution.DataFetcherResult<P>`
+| With `P` being any of the types listed above (`T`, `Mono<T>`, etc.).
+
+This is the "full" GraphQL Java return value, containing not only the "data".
+Useful for completing the result with "extensions" or a xref:controllers.adoc#controllers.schema-mapping.localcontext["Local Context"].
+
+|===
 
 On Java 21+, when `AnnotatedControllerConfigurer` is configured with an `Executor`, controller
 methods with a blocking method signature are invoked asynchronously. By default, a controller
@@ -273,7 +294,7 @@ You can write a controller like this:
 [source,java,indent=0,subs="verbatim,quotes"]
 ----
 	@Controller
-	public class BookController {
+	public class ActivityController {
 
 		@QueryMapping
 		public List<Activity> activities() {
@@ -293,7 +314,7 @@ If necessary, you can take over the mapping for individual subtypes:
 [source,java,indent=0,subs="verbatim,quotes"]
 ----
 	@Controller
-	public class BookController {
+	public class ActivityController {
 
 		@QueryMapping
 		public List<Activity> activities() {
@@ -418,6 +439,9 @@ For example:
 `ArgumentValue` is also supported as a field within the object structure of an `@Argument`
 method parameter, either initialized via a constructor argument or via a setter, including
 as a field of an object nested at any level below the top level object.
+
+This is also supported on the client side with a dedicated Jackson Module,
+see the xref:client.adoc#client.argumentvalue[`ArgumentValue` support for clients] section.
 
 
 [[controllers.schema-mapping.arguments]]
@@ -658,6 +682,19 @@ https://github.com/spring-projects/spring-graphql/issues/344#issuecomment-108281
 for links to relevant issues and a suggested workaround.
 ====
 
+[[controllers.schema-mapping.localcontext]]
+=== Local Context
+
+The main `GraphQlContext` is global for the entire query and can be used to store and retrieve cross-cutting context data for observability, security and more.
+There are times when you would like to pass additional information to child fields data fetchers and avoid polluting the main context.
+For such use cases, you should consider a local `GraphQLContext` as it is contained to a subset of the data fetching operations.
+
+Controller methods can contribute a local context by returning a `DataFetcherResult<T>` that holds the resolved data and the new context:
+
+include-code::LocalContextBookController[tag=localcontext,indent=0]
+
+If you want to see a more detailed example and discussion of using this, have a look at
+https://www.graphql-java.com/blog/deep-dive-data-fetcher-results[the "Building efficient data fetchers by looking ahead" section on the graphql-java documentation].
 
 
 [[controllers.batch-mapping]]
@@ -743,7 +780,15 @@ Batch mapping methods support the following arguments:
 
 | `BatchLoaderEnvironment`
 | The environment that is available in GraphQL Java to a
-`org.dataloader.BatchLoaderWithContext`.
+  `org.dataloader.BatchLoaderWithContext`.
+
+  The `context` property of `BatchLoaderEnvironment` returns the same
+  `GraphQLContext` instance that is also available to `@SchemaMapping`
+  methods through the `DataFetchingEnvironment`.
+
+  The `keyContexts` property of `BatchLoaderEnvironment` returns the
+  localContext obtained from the `DataFetchingEnvironment` when the
+  `DataLoader` was called for each key.
 
 |===
 
@@ -878,37 +923,14 @@ Use `@GraphQlExceptionHandler` methods to handle exceptions from data fetching w
 flexible xref:controllers.adoc#controllers.exception-handler.signature[method signature]. When declared in a
 controller, exception handler methods apply to exceptions from the same controller:
 
-[source,java,indent=0,subs="verbatim,quotes"]
-----
-	@Controller
-	public class BookController {
-
-		@QueryMapping
-		public Book bookById(@Argument Long id) {
-			// ...
-		}
-
-		@GraphQlExceptionHandler
-		public GraphQLError handle(BindException ex) {
-			return GraphQLError.newError().errorType(ErrorType.BAD_REQUEST).message("...").build();
-		}
-	}
-----
+include-code::BookController[]
 
 When declared in an `@ControllerAdvice`, exception handler methods apply across controllers:
 
-[source,java,indent=0,subs="verbatim,quotes"]
-----
-	@ControllerAdvice
-	public class GlobalExceptionHandler {
+include-code::GlobalExceptionHandler[]
 
-		@GraphQlExceptionHandler
-		public GraphQLError handle(BindException ex) {
-			return GraphQLError.newError().errorType(ErrorType.BAD_REQUEST).message("...").build();
-		}
-
-	}
-----
+As shown in the examples above, you should build errors by injecting `GraphQlErrorBuilder` in the method signature
+because it's been prepared with the current `DataFetchingEnvironment`.
 
 Exception handling via `@GraphQlExceptionHandler` methods is applied automatically to
 controller invocations. To handle exceptions from other `graphql.schema.DataFetcher`
@@ -956,7 +978,7 @@ Supported return types are listed below:
 == Namespacing
 
 At the schema level, query and mutation operations are defined directly under the `Query` and `Mutation` types.
-Rich GraphQL APIs can define dozens of operation sunder those types, making it harder to explore the API and separate concerns.
+Rich GraphQL APIs can define dozens of operations under those types, making it harder to explore the API and separate concerns.
 You can choose to https://www.apollographql.com/docs/technotes/TN0012-namespacing-by-separation-of-concern/[define Namespaces in your GraphQL schema].
 While there are some caveats with this approach, you can implement this pattern with Spring for GraphQL annotated controllers.
 

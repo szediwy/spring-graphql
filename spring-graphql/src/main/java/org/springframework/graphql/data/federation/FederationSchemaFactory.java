@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.graphql.data.federation;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,11 +26,16 @@ import java.util.stream.Collectors;
 
 import com.apollographql.federation.graphqljava.Federation;
 import com.apollographql.federation.graphqljava.SchemaTransformer;
+import graphql.language.Argument;
+import graphql.language.BooleanValue;
+import graphql.language.Directive;
+import graphql.language.TypeDefinition;
 import graphql.schema.DataFetcher;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.TypeResolver;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.expression.BeanFactoryResolver;
@@ -46,11 +52,11 @@ import org.springframework.graphql.data.method.annotation.support.Authentication
 import org.springframework.graphql.data.method.annotation.support.ContextValueMethodArgumentResolver;
 import org.springframework.graphql.data.method.annotation.support.ContinuationHandlerMethodArgumentResolver;
 import org.springframework.graphql.data.method.annotation.support.DataFetchingEnvironmentMethodArgumentResolver;
+import org.springframework.graphql.data.method.annotation.support.DataLoaderMethodArgumentResolver;
 import org.springframework.graphql.data.method.annotation.support.LocalContextValueMethodArgumentResolver;
 import org.springframework.graphql.data.method.annotation.support.PrincipalMethodArgumentResolver;
 import org.springframework.graphql.execution.ClassNameTypeResolver;
 import org.springframework.graphql.execution.GraphQlSource.SchemaResourceBuilder;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -66,20 +72,18 @@ import org.springframework.util.StringUtils;
  * @author Rossen Stoyanchev
  * @since 1.3.0
  * @see Federation#transform(TypeDefinitionRegistry, RuntimeWiring)
- *
  */
 public final class FederationSchemaFactory
 		extends AnnotatedControllerDetectionSupport<FederationSchemaFactory.EntityMappingInfo> {
 
-	@Nullable
-	private TypeResolver typeResolver;
+	private @Nullable TypeResolver typeResolver;
 
 	private final Map<String, EntityHandlerMethod> handlerMethods = new LinkedHashMap<>();
 
 
 	/**
 	 * Configure a resolver that helps to map Java to entity schema type names.
-	 * <p>By default this is {@link ClassNameTypeResolver}.
+	 * <p>By default, this is {@link ClassNameTypeResolver}.
 	 * @param typeResolver the custom type resolver to use
 	 * @see SchemaTransformer#resolveEntityType(TypeResolver)
 	 */
@@ -113,8 +117,7 @@ public final class FederationSchemaFactory
 
 		HandlerMethodArgumentResolverComposite resolvers = new HandlerMethodArgumentResolverComposite();
 
-		GraphQlArgumentBinder argumentBinder =
-				new GraphQlArgumentBinder(getConversionService(), isFallBackOnDirectFieldAccess());
+		GraphQlArgumentBinder argumentBinder = new GraphQlArgumentBinder(getBinderOptions());
 
 		// Annotation based
 		resolvers.addResolver(new ContextValueMethodArgumentResolver());
@@ -124,6 +127,7 @@ public final class FederationSchemaFactory
 
 		// Type based
 		resolvers.addResolver(new DataFetchingEnvironmentMethodArgumentResolver());
+		resolvers.addResolver(new DataLoaderMethodArgumentResolver());
 		if (springSecurityPresent) {
 			ApplicationContext context = obtainApplicationContext();
 			resolvers.addResolver(new PrincipalMethodArgumentResolver());
@@ -138,8 +142,7 @@ public final class FederationSchemaFactory
 
 
 	@Override
-	@Nullable
-	protected EntityMappingInfo getMappingInfo(Method method, Object handler, Class<?> handlerType) {
+	protected @Nullable EntityMappingInfo getMappingInfo(Method method, Object handler, Class<?> handlerType) {
 		EntityMapping mapping = AnnotatedElementUtils.findMergedAnnotation(method, EntityMapping.class);
 		if (mapping == null) {
 			return null;
@@ -177,10 +180,38 @@ public final class FederationSchemaFactory
 	 * @param wiring the existing runtime wiring
 	 */
 	public SchemaTransformer createSchemaTransformer(TypeDefinitionRegistry registry, RuntimeWiring wiring) {
+		checkEntityMappings(registry);
 		Assert.state(this.typeResolver != null, "afterPropertiesSet not called");
 		return Federation.transform(registry, wiring)
 				.fetchEntities(new EntitiesDataFetcher(this.handlerMethods, getExceptionResolver()))
 				.resolveEntityType(this.typeResolver);
+	}
+
+	private void checkEntityMappings(TypeDefinitionRegistry registry) {
+		List<String> unmappedEntities = new ArrayList<>();
+		for (TypeDefinition<?> type : registry.types().values()) {
+			type.getDirectives().forEach((directive) -> {
+				if (isResolvableKeyDirective(directive) && !this.handlerMethods.containsKey(type.getName())) {
+					unmappedEntities.add(type.getName());
+				}
+			});
+		}
+		if (!unmappedEntities.isEmpty()) {
+			throw new IllegalStateException("Unmapped entity types: " +
+					unmappedEntities.stream().collect(Collectors.joining("', '", "'", "'")));
+		}
+	}
+
+	private boolean isResolvableKeyDirective(Directive directive) {
+		if (!directive.getName().equalsIgnoreCase("key")) {
+			return false;
+		}
+		Argument argument = directive.getArgument("resolvable");
+		if (argument != null) {
+			Object value = argument.getValue();
+			return (value instanceof BooleanValue bv && bv.isValue());
+		}
+		return true;
 	}
 
 

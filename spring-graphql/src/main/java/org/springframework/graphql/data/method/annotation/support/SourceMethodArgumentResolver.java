@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,12 +68,12 @@ public class SourceMethodArgumentResolver implements HandlerMethodArgumentResolv
 		Object source = environment.getSource();
 		if (source == null) {
 			throw new IllegalStateException(formatArgumentError(parameter,
-					" was not recognized by any resolver and there is no source/parent either. " +
+					"was not recognized by any resolver and there is no source/parent either. " +
 							"Please, refer to the documentation for the full list of supported parameters."));
 		}
 		if (!parameter.getParameterType().isInstance(source)) {
 			throw new IllegalStateException(formatArgumentError(parameter,
-					" does not match the source Object type '" + source.getClass() + "'."));
+					"does not match the source Object type '" + source.getClass() + "'."));
 		}
 		return source;
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import graphql.schema.DataFetcher;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
+import org.jspecify.annotations.Nullable;
 
-import org.springframework.lang.Nullable;
 import org.springframework.util.MultiValueMap;
 
 /**
@@ -81,8 +81,7 @@ public interface SchemaReport {
 	 * Return the {@code DataFetcher} for the given field coordinates, if registered.
 	 * @param coordinates the field coordinates
 	 */
-	@Nullable
-	DataFetcher<?> dataFetcher(FieldCoordinates coordinates);
+	@Nullable DataFetcher<?> dataFetcher(FieldCoordinates coordinates);
 
 
 	/**

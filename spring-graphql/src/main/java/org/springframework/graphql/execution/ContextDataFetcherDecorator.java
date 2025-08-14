@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,13 @@
 package org.springframework.graphql.execution;
 
 import java.util.List;
+import java.util.Map;
 
 import graphql.ExecutionInput;
 import graphql.GraphQLContext;
 import graphql.TrivialDataFetcher;
+import graphql.execution.AbortExecutionException;
+import graphql.execution.DataFetcherResult;
 import graphql.schema.DataFetcher;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.FieldCoordinates;
@@ -34,10 +37,12 @@ import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
 import io.micrometer.context.ContextSnapshot;
 import io.micrometer.context.ContextSnapshotFactory;
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import org.springframework.core.ResolvableType;
 import org.springframework.util.Assert;
 
 /**
@@ -48,11 +53,13 @@ import org.springframework.util.Assert;
  * <li>Re-establish Reactor Context passed via {@link ExecutionInput}.
  * <li>Re-establish ThreadLocal context passed via {@link ExecutionInput}.
  * <li>Resolve exceptions from a GraphQL subscription {@link Publisher}.
+ * <li>Propagate the cancellation signal to {@code DataFetcher} from the transport layer.
  * </ul>
  *
  * @author Rossen Stoyanchev
+ * @author Brian Clozel
  */
-final class ContextDataFetcherDecorator implements DataFetcher<Object> {
+class ContextDataFetcherDecorator implements DataFetcher<Object> {
 
 	private final DataFetcher<?> delegate;
 
@@ -73,21 +80,42 @@ final class ContextDataFetcherDecorator implements DataFetcher<Object> {
 	}
 
 
-	@SuppressWarnings("ReactiveStreamsUnusedPublisher")
 	@Override
-	public Object get(DataFetchingEnvironment env) throws Exception {
+	public @Nullable Object get(DataFetchingEnvironment env) throws Exception {
 
 		GraphQLContext graphQlContext = env.getGraphQlContext();
-		ContextSnapshotFactory snapshotFactory = ContextSnapshotFactoryHelper.getInstance(graphQlContext);
-
+		ContextSnapshotFactory snapshotFactory = ContextPropagationHelper.getInstance(graphQlContext);
 		ContextSnapshot snapshot = (env.getLocalContext() instanceof GraphQLContext localContext) ?
 				snapshotFactory.captureFrom(graphQlContext, localContext) :
 				snapshotFactory.captureFrom(graphQlContext);
 
 		Object value = snapshot.wrap(() -> this.delegate.get(env)).call();
 
+		if (value instanceof DataFetcherResult<?> dataFetcherResult) {
+			value = dataFetcherResult.map((data) -> updateValue(data, snapshot, graphQlContext));
+		}
+		else {
+			value = updateValue(value, snapshot, graphQlContext);
+		}
+
+		return value;
+	}
+
+	@SuppressWarnings("ReactiveStreamsUnusedPublisher")
+	private @Nullable Object updateValue(
+			@Nullable Object value, ContextSnapshot snapshot, GraphQLContext graphQlContext) {
+
+		if (value == null) {
+			return null;
+		}
+		if (ContextPropagationHelper.isCancelled(graphQlContext)) {
+			return DataFetcherResult.newResult()
+					.error(new AbortExecutionException("GraphQL request has been cancelled by the client."))
+					.build();
+		}
+
 		if (this.subscription) {
-			return ReactiveAdapterRegistryHelper.toSubscriptionFlux(value)
+			Flux<?> subscriptionResult = ReactiveAdapterRegistryHelper.toSubscriptionFlux(value)
 					.onErrorResume((exception) -> {
 						// Already handled, e.g. controller methods?
 						if (exception instanceof SubscriptionPublisherException) {
@@ -95,7 +123,8 @@ final class ContextDataFetcherDecorator implements DataFetcher<Object> {
 						}
 						return this.subscriptionExceptionResolver.resolveException(exception)
 								.flatMap((errors) -> Mono.error(new SubscriptionPublisherException(errors, exception)));
-					})
+					});
+			return ContextPropagationHelper.bindCancelFrom(subscriptionResult, graphQlContext)
 					.contextWrite(snapshot::updateContext);
 		}
 
@@ -141,8 +170,8 @@ final class ContextDataFetcherDecorator implements DataFetcher<Object> {
 			DataFetcher<?> dataFetcher = codeRegistry.getDataFetcher(fieldCoordinates, fieldDefinition);
 
 			if (applyDecorator(dataFetcher)) {
-				boolean handlesSubscription = visitorHelper.isSubscriptionType(parent);
-				dataFetcher = new ContextDataFetcherDecorator(dataFetcher, handlesSubscription, this.exceptionResolver);
+				boolean subscriptionType = visitorHelper.isSubscriptionType(parent);
+				dataFetcher = decorate(dataFetcher, subscriptionType, this.exceptionResolver);
 				codeRegistry.dataFetcher(fieldCoordinates, dataFetcher);
 			}
 
@@ -160,6 +189,49 @@ final class ContextDataFetcherDecorator implements DataFetcher<Object> {
 						packageName.startsWith("graphql.validation"));
 			}
 			return true;
+		}
+
+		private static ContextDataFetcherDecorator decorate(
+				DataFetcher<?> dataFetcher, boolean subscriptionType, SubscriptionExceptionResolver exceptionResolver) {
+
+			return ((dataFetcher instanceof SelfDescribingDataFetcher<?> sddf) ?
+					new SelfDescribingContextDataFetcherDecorator(sddf, subscriptionType, exceptionResolver) :
+					new ContextDataFetcherDecorator(dataFetcher, subscriptionType, exceptionResolver));
+		}
+	}
+
+
+	private static final class SelfDescribingContextDataFetcherDecorator extends ContextDataFetcherDecorator
+			implements SelfDescribingDataFetcher<Object> {
+
+		private final SelfDescribingDataFetcher<?> delegate;
+
+		private SelfDescribingContextDataFetcherDecorator(
+				SelfDescribingDataFetcher<?> delegate, boolean subscriptionType,
+				SubscriptionExceptionResolver exceptionResolver) {
+
+			super(delegate, subscriptionType, exceptionResolver);
+			this.delegate = delegate;
+		}
+
+		@Override
+		public String getDescription() {
+			return this.delegate.getDescription();
+		}
+
+		@Override
+		public ResolvableType getReturnType() {
+			return this.delegate.getReturnType();
+		}
+
+		@Override
+		public Map<String, ResolvableType> getArguments() {
+			return this.delegate.getArguments();
+		}
+
+		@Override
+		public boolean usesDataLoader() {
+			return this.delegate.usesDataLoader();
 		}
 	}
 

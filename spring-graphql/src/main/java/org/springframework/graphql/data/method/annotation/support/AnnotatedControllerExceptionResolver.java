@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import graphql.GraphQLError;
 import graphql.schema.DataFetchingEnvironment;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 import org.springframework.context.ApplicationContext;
@@ -44,7 +45,6 @@ import org.springframework.graphql.data.method.HandlerMethod;
 import org.springframework.graphql.data.method.HandlerMethodArgumentResolverComposite;
 import org.springframework.graphql.data.method.annotation.GraphQlExceptionHandler;
 import org.springframework.graphql.execution.DataFetcherExceptionResolver;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ConcurrentReferenceHashMap;
@@ -204,7 +204,7 @@ final class AnnotatedControllerExceptionResolver implements HandlerDataFetcherEx
 			}
 		}
 
-		if (methodReturnValueAdapter == null) {
+		if (methodReturnValueAdapter == null || controllerOrAdvice == null) {
 			return Mono.empty();
 		}
 
@@ -267,7 +267,7 @@ final class AnnotatedControllerExceptionResolver implements HandlerDataFetcherEx
 	 */
 	private static final class MethodResolver {
 
-		@SuppressWarnings("DataFlowIssue")
+		@SuppressWarnings({"DataFlowIssue", "NullAway"})
 		private static final MethodReturnValueAdapter NO_MATCH =
 				new MethodReturnValueAdapter(ReflectionUtils.findMethod(MethodResolver.class, "noMatch"));
 
@@ -287,8 +287,7 @@ final class AnnotatedControllerExceptionResolver implements HandlerDataFetcherEx
 		 * @param exception the exception
 		 * @return the exception handler to use, or {@code null} if no match
 		 */
-		@Nullable
-		MethodReturnValueAdapter resolveMethod(Throwable exception) {
+		@Nullable MethodReturnValueAdapter resolveMethod(Throwable exception) {
 			MethodReturnValueAdapter method = resolveMethodByExceptionType(exception.getClass());
 			if (method == null) {
 				Throwable cause = exception.getCause();
@@ -299,8 +298,7 @@ final class AnnotatedControllerExceptionResolver implements HandlerDataFetcherEx
 			return method;
 		}
 
-		@Nullable
-		private MethodReturnValueAdapter resolveMethodByExceptionType(Class<? extends Throwable> exceptionType) {
+		private @Nullable MethodReturnValueAdapter resolveMethodByExceptionType(Class<? extends Throwable> exceptionType) {
 			MethodReturnValueAdapter method = this.resolvedExceptionCache.get(exceptionType);
 			if (method == null) {
 				method = getMappedMethod(exceptionType);
@@ -309,6 +307,7 @@ final class AnnotatedControllerExceptionResolver implements HandlerDataFetcherEx
 			return (method != NO_MATCH) ? method : null;
 		}
 
+		@SuppressWarnings("NullAway")
 		private MethodReturnValueAdapter getMappedMethod(Class<? extends Throwable> exceptionType) {
 			List<Class<? extends Throwable>> matches = new ArrayList<>();
 			for (Class<? extends Throwable> mappedException : this.exceptionMappings.keySet()) {
@@ -356,7 +355,16 @@ final class AnnotatedControllerExceptionResolver implements HandlerDataFetcherEx
 			return this.method;
 		}
 
+		@SuppressWarnings("unchecked")
 		Mono<List<GraphQLError>> adapt(@Nullable Object result, Throwable ex) {
+			if (result instanceof Mono<?> errorMono && this.adapter != ReturnValueAdapter.forMono) {
+				return (Mono<List<GraphQLError>>) errorMono.onErrorMap((ex2) -> {
+					if (logger.isWarnEnabled()) {
+						logger.warn("Failure in @GraphQlExceptionHandler " + this.method, ex2);
+					}
+					return ex; // fall back to original exception
+				});
+			}
 			return this.adapter.adapt(result, this.returnType, ex);
 		}
 

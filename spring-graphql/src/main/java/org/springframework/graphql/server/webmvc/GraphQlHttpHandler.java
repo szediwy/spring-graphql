@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,19 @@ package org.springframework.graphql.server.webmvc;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
+import org.springframework.graphql.MediaTypes;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.WebGraphQlResponse;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
-import org.springframework.lang.Nullable;
+import org.springframework.web.server.NotAcceptableStatusException;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
 
@@ -41,10 +44,13 @@ import org.springframework.web.servlet.function.ServerResponse;
  */
 public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 
-	@SuppressWarnings("removal")
-	private static final List<MediaType> SUPPORTED_MEDIA_TYPES = List.of(
-			MediaType.APPLICATION_GRAPHQL_RESPONSE, MediaType.APPLICATION_JSON, MediaType.APPLICATION_GRAPHQL);
+	private static final MediaType APPLICATION_GRAPHQL =
+			new MediaType("application", "graphql+json");
 
+	private static final List<MediaType> SUPPORTED_MEDIA_TYPES = List.of(
+			MediaTypes.APPLICATION_GRAPHQL_RESPONSE, MediaType.APPLICATION_JSON, APPLICATION_GRAPHQL);
+
+	private boolean httpOkOnValidationErrors = false;
 
 	/**
 	 * Create a new instance.
@@ -66,38 +72,73 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 		super(graphQlHandler, converter);
 	}
 
+	/**
+	 * Return whether this HTTP handler should use HTTP 200 OK responses if an error occurs before
+	 * the GraphQL request execution phase starts; for example, if JSON parsing, GraphQL document parsing,
+	 * or GraphQL document validation fail.
+	 * <p>This option only applies to {@link MediaTypes#APPLICATION_GRAPHQL_RESPONSE} responses,
+	 * as legacy {@link MediaType#APPLICATION_JSON} responses always use HTTP 200 OK in such cases.
+	 * Enabling this option means the server will not conform to the "GraphQL over HTTP specification".
+	 * <p>By default, this is set to {@code false}.
+	 * @since 1.4.0
+	 * @see <a href="https://graphql.github.io/graphql-over-http/draft/#sec-application-graphql-response-json">GraphQL over HTTP specification</a>
+	 */
+	public boolean isHttpOkOnValidationErrors() {
+		return this.httpOkOnValidationErrors;
+	}
+
+	/**
+	 * Set whether this HTTP handler should use HTTP 200 OK responses if an error occurs before
+	 * the GraphQL request execution phase starts.
+	 * @param httpOkOnValidationErrors whether "HTTP 200 OK" responses should always be used
+	 * @since 1.4.0
+	 * @deprecated since 1.4, will be made {@code false} permanently in a future release
+	 * @see #isHttpOkOnValidationErrors
+	 */
+	@Deprecated(since = "1.4.0", forRemoval = true)
+	public void setHttpOkOnValidationErrors(boolean httpOkOnValidationErrors) {
+		this.httpOkOnValidationErrors = httpOkOnValidationErrors;
+	}
+
 
 	@Override
 	protected ServerResponse prepareResponse(ServerRequest request, Mono<WebGraphQlResponse> responseMono) {
 
-		CompletableFuture<ServerResponse> future = responseMono.map((response) -> {
+		Mono<ServerResponse> mono = responseMono.map((response) -> {
 			MediaType contentType = selectResponseMediaType(request);
-			ServerResponse.BodyBuilder builder = ServerResponse.ok();
+			HttpStatus responseStatus = selectResponseStatus(response, contentType);
+			ServerResponse.BodyBuilder builder = ServerResponse.status(responseStatus);
 			builder.headers((headers) -> headers.putAll(response.getResponseHeaders()));
 			builder.contentType(contentType);
 
 			Map<String, Object> resultMap = response.toMap();
 			ServerResponse.HeadersBuilder.WriteFunction writer = getWriteFunction(resultMap, contentType);
 			return (writer != null) ? builder.build(writer) : builder.body(resultMap);
-		}).toFuture();
+		});
 
-		// This won't be needed on a Spring Framework 6.2 baseline:
-		// https://github.com/spring-projects/spring-framework/issues/32223
+		return ServerResponse.async(mono.toFuture());
+	}
 
-		if (future.isDone() && !future.isCancelled() && !future.isCompletedExceptionally()) {
-			try {
-				return future.get();
-			}
-			catch (InterruptedException | ExecutionException ignored) {
-				// fall through to use DefaultAsyncServerResponse
-			}
+	protected HttpStatus selectResponseStatus(WebGraphQlResponse response, MediaType responseMediaType) {
+		if (!isHttpOkOnValidationErrors()
+				&& !response.getExecutionResult().isDataPresent()
+				&& MediaTypes.APPLICATION_GRAPHQL_RESPONSE.equals(responseMediaType)) {
+			return HttpStatus.BAD_REQUEST;
 		}
-
-		return ServerResponse.async(future);
+		return HttpStatus.OK;
 	}
 
 	private static MediaType selectResponseMediaType(ServerRequest request) {
-		for (MediaType mediaType : request.headers().accept()) {
+		ServerRequest.Headers headers = request.headers();
+		List<MediaType> acceptedMediaTypes;
+		try {
+			acceptedMediaTypes = headers.accept();
+		}
+		catch (InvalidMediaTypeException ex) {
+			throw new NotAcceptableStatusException("Could not parse " +
+					"Accept header [" + headers.firstHeader(HttpHeaders.ACCEPT) + "]: " + ex.getMessage());
+		}
+		for (MediaType mediaType : acceptedMediaTypes) {
 			if (SUPPORTED_MEDIA_TYPES.contains(mediaType)) {
 				return mediaType;
 			}

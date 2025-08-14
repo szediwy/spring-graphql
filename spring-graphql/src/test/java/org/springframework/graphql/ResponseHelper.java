@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,6 @@ import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.TypeRef;
-import com.jayway.jsonpath.spi.json.JacksonJsonProvider;
-import com.jayway.jsonpath.spi.mapper.JacksonMappingProvider;
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
 import graphql.execution.ResultPath;
@@ -39,6 +37,7 @@ import reactor.core.publisher.Mono;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.ResolvableType;
 import org.springframework.lang.Nullable;
+import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +53,9 @@ public class ResponseHelper {
 
 	private static final Log logger = LogFactory.getLog(ResponseHelper.class);
 
+	protected static final boolean jacksonPresent = ClassUtils.isPresent(
+			"tools.jackson.databind.ObjectMapper", ResponseHelper.class.getClassLoader());
+
 
 	private final DocumentContext documentContext;
 
@@ -68,10 +70,18 @@ public class ResponseHelper {
 	}
 
 	private static Configuration initJsonPathConfig() {
-		return Configuration.builder()
-				.jsonProvider(new JacksonJsonProvider())
-				.mappingProvider(new JacksonMappingProvider())
-				.build();
+		if (jacksonPresent) {
+			return Configuration.builder()
+					.jsonProvider(new JacksonJsonProvider())
+					.mappingProvider(new JacksonMappingProvider())
+					.build();
+		}
+		else {
+			return Configuration.builder()
+					.jsonProvider(new com.jayway.jsonpath.spi.json.JacksonJsonProvider())
+					.mappingProvider(new com.jayway.jsonpath.spi.mapper.JacksonMappingProvider())
+					.build();
+		}
 	}
 
 

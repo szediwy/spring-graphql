@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ import org.springframework.graphql.server.WebSocketSessionInfo;
 import org.springframework.graphql.server.support.GraphQlWebSocketMessage;
 import org.springframework.graphql.server.support.GraphQlWebSocketMessageType;
 import org.springframework.http.codec.ServerCodecConfigurer;
-import org.springframework.http.codec.json.Jackson2JsonDecoder;
+import org.springframework.http.codec.json.JacksonJsonDecoder;
 import org.springframework.web.reactive.socket.CloseStatus;
 import org.springframework.web.reactive.socket.WebSocketMessage;
 
@@ -65,9 +65,9 @@ import static org.springframework.graphql.server.support.GraphQlWebSocketMessage
 /**
  * Unit tests for {@link GraphQlWebSocketHandler}.
  */
-public class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
+class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
-	private static final Jackson2JsonDecoder decoder = new Jackson2JsonDecoder();
+	private static final JacksonJsonDecoder decoder = new JacksonJsonDecoder();
 
 	private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
@@ -386,15 +386,15 @@ public class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 		new ReflectiveRuntimeHintsRegistrar().registerRuntimeHints(runtimeHints, GraphQlWebSocketHandler.class);
 		ReflectionHintsPredicates reflection = RuntimeHintsPredicates.reflection();
 		assertThat(reflection.onType(GraphQlWebSocketMessage.class)).accepts(runtimeHints);
-		assertThat(reflection.onField(GraphQlWebSocketMessage.class, "id")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "getId")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "setId")).accepts(runtimeHints);
-		assertThat(reflection.onField(GraphQlWebSocketMessage.class, "type")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "getType")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "setType")).accepts(runtimeHints);
-		assertThat(reflection.onField(GraphQlWebSocketMessage.class, "payload")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "getPayload")).accepts(runtimeHints);
-		assertThat(reflection.onMethod(GraphQlWebSocketMessage.class, "setPayload")).accepts(runtimeHints);
+		assertThat(reflection.onFieldAccess(GraphQlWebSocketMessage.class, "id")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "getId")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "setId")).accepts(runtimeHints);
+		assertThat(reflection.onFieldAccess(GraphQlWebSocketMessage.class, "type")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "getType")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "setType")).accepts(runtimeHints);
+		assertThat(reflection.onFieldAccess(GraphQlWebSocketMessage.class, "payload")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "getPayload")).accepts(runtimeHints);
+		assertThat(reflection.onMethodInvocation(GraphQlWebSocketMessage.class, "setPayload")).accepts(runtimeHints);
 	}
 
 	private TestWebSocketSession handle(Flux<WebSocketMessage> input, WebGraphQlInterceptor... interceptors) {

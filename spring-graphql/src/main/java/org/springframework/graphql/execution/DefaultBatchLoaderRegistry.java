@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,10 +36,10 @@ import org.dataloader.DataLoaderFactory;
 import org.dataloader.DataLoaderOptions;
 import org.dataloader.DataLoaderRegistry;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -60,12 +60,11 @@ public class DefaultBatchLoaderRegistry implements BatchLoaderRegistry {
 	private final Supplier<DataLoaderOptions> defaultOptionsSupplier;
 
 
-
 	/**
 	 * Default constructor.
 	 */
 	public DefaultBatchLoaderRegistry() {
-		this(DataLoaderOptions::newOptions);
+		this(DataLoaderOptions::newDefaultOptions);
 	}
 
 	/**
@@ -99,40 +98,37 @@ public class DefaultBatchLoaderRegistry implements BatchLoaderRegistry {
 	public void registerDataLoaders(DataLoaderRegistry registry, GraphQLContext context) {
 		BatchLoaderContextProvider contextProvider = () -> context;
 		for (ReactorBatchLoader<?, ?> loader : this.loaders) {
-			DataLoaderOptions options = loader.getOptions();
-			options = options.setBatchLoaderContextProvider(contextProvider);
-			DataLoader<?, ?> dataLoader = DataLoaderFactory.newDataLoader(loader, options);
-			registerDataLoader(loader.getName(), dataLoader, registry);
+			DataLoaderOptions options = loader.getOptions()
+					.transform((opt) -> opt.setBatchLoaderContextProvider(contextProvider));
+			DataLoader<?, ?> dataLoader = DataLoaderFactory.newDataLoader(loader.getName(), loader, options);
+			registerDataLoader(dataLoader, registry);
 		}
 		for (ReactorMappedBatchLoader<?, ?> loader : this.mappedLoaders) {
-			DataLoaderOptions options = loader.getOptions();
-			options = options.setBatchLoaderContextProvider(contextProvider);
-			DataLoader<?, ?> dataLoader = DataLoaderFactory.newMappedDataLoader(loader, options);
-			registerDataLoader(loader.getName(), dataLoader, registry);
+			DataLoaderOptions options = loader.getOptions()
+					.transform((opt) -> opt.setBatchLoaderContextProvider(contextProvider));
+			DataLoader<?, ?> dataLoader = DataLoaderFactory.newMappedDataLoader(loader.getName(), loader, options);
+			registerDataLoader(dataLoader, registry);
 		}
 	}
 
-	private void registerDataLoader(String name, DataLoader<?, ?> dataLoader, DataLoaderRegistry registry) {
-		if (registry.getDataLoader(name) != null) {
-			throw new IllegalStateException("More than one DataLoader named '" + name + "'");
+	@SuppressWarnings("NullAway") // DataLoaderRegistry#getDataLoader should be @Nullable
+	private void registerDataLoader(DataLoader<?, ?> dataLoader, DataLoaderRegistry registry) {
+		if (registry.getDataLoader(dataLoader.getName()) != null) {
+			throw new IllegalStateException("More than one DataLoader named '" + dataLoader.getName() + "'");
 		}
-		registry.register(name, dataLoader);
+		registry.register(dataLoader.getName(), dataLoader);
 	}
 
 
 	private class DefaultRegistrationSpec<K, V> implements RegistrationSpec<K, V> {
 
-		@Nullable
-		private final Class<?> valueType;
+		private final @Nullable Class<?> valueType;
 
-		@Nullable
-		private String name;
+		private @Nullable String name;
 
-		@Nullable
-		private DataLoaderOptions options;
+		private @Nullable DataLoaderOptions options;
 
-		@Nullable
-		private Consumer<DataLoaderOptions> optionsConsumer;
+		private @Nullable Consumer<DataLoaderOptions.Builder> optionsBuilderConsumer;
 
 		DefaultRegistrationSpec(Class<V> valueType) {
 			this.valueType = valueType;
@@ -150,9 +146,9 @@ public class DefaultBatchLoaderRegistry implements BatchLoaderRegistry {
 		}
 
 		@Override
-		public RegistrationSpec<K, V> withOptions(Consumer<DataLoaderOptions> optionsConsumer) {
-			this.optionsConsumer = (this.optionsConsumer != null) ?
-					this.optionsConsumer.andThen(optionsConsumer) : optionsConsumer;
+		public RegistrationSpec<K, V> withOptions(Consumer<DataLoaderOptions.Builder> optionsBuilderConsumer) {
+			this.optionsBuilderConsumer = (this.optionsBuilderConsumer != null) ?
+					this.optionsBuilderConsumer.andThen(optionsBuilderConsumer) : optionsBuilderConsumer;
 			return this;
 		}
 
@@ -183,21 +179,21 @@ public class DefaultBatchLoaderRegistry implements BatchLoaderRegistry {
 		}
 
 		private Supplier<DataLoaderOptions> initOptionsSupplier() {
-
-			Supplier<DataLoaderOptions> optionsSupplier = () ->
-					new DataLoaderOptions((this.options != null) ?
-							this.options : DefaultBatchLoaderRegistry.this.defaultOptionsSupplier.get());
-
-			if (this.optionsConsumer == null) {
-				return optionsSupplier;
-			}
-
 			return () -> {
-				DataLoaderOptions options = optionsSupplier.get();
-				this.optionsConsumer.accept(options);
-				return options;
+				DataLoaderOptions.Builder builder;
+				if (this.options != null) {
+					builder = DataLoaderOptions.newOptions(this.options);
+				}
+				else {
+					builder = DataLoaderOptions.newOptions(DefaultBatchLoaderRegistry.this.defaultOptionsSupplier.get());
+				}
+				if (this.optionsBuilderConsumer != null) {
+					this.optionsBuilderConsumer.accept(builder);
+				}
+				return builder.build();
 			};
 		}
+
 	}
 
 
@@ -233,7 +229,8 @@ public class DefaultBatchLoaderRegistry implements BatchLoaderRegistry {
 		@Override
 		public CompletionStage<List<V>> load(List<K> keys, BatchLoaderEnvironment environment) {
 			GraphQLContext graphQLContext = environment.getContext();
-			ContextSnapshot snapshot = ContextSnapshotFactoryHelper.captureFrom(graphQLContext);
+			Assert.state(graphQLContext != null, "No GraphQLContext available");
+			ContextSnapshot snapshot = ContextPropagationHelper.captureFrom(graphQLContext);
 			try {
 				return snapshot.wrap(() ->
 								this.loader.apply(keys, environment)
@@ -281,7 +278,8 @@ public class DefaultBatchLoaderRegistry implements BatchLoaderRegistry {
 		@Override
 		public CompletionStage<Map<K, V>> load(Set<K> keys, BatchLoaderEnvironment environment) {
 			GraphQLContext graphQLContext = environment.getContext();
-			ContextSnapshot snapshot = ContextSnapshotFactoryHelper.captureFrom(graphQLContext);
+			Assert.state(graphQLContext != null, "No GraphQLContext available");
+			ContextSnapshot snapshot = ContextPropagationHelper.captureFrom(graphQLContext);
 			try {
 				return snapshot.wrap(() ->
 								this.loader.apply(keys, environment)

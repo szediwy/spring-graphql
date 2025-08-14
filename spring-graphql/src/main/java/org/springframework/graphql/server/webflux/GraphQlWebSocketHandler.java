@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,14 +28,19 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import graphql.ExecutionResult;
+import graphql.GraphQLError;
+import graphql.GraphqlErrorBuilder;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
+import org.springframework.graphql.execution.ErrorType;
+import org.springframework.graphql.execution.SubscriptionPublisherException;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.WebGraphQlResponse;
 import org.springframework.graphql.server.WebSocketGraphQlInterceptor;
@@ -44,7 +49,6 @@ import org.springframework.graphql.server.WebSocketSessionInfo;
 import org.springframework.graphql.server.support.GraphQlWebSocketMessage;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.codec.CodecConfigurer;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.socket.CloseStatus;
@@ -77,8 +81,7 @@ public class GraphQlWebSocketHandler implements WebSocketHandler {
 
 	private final Duration initTimeoutDuration;
 
-	@Nullable
-	private final Duration keepAliveDuration;
+	private final @Nullable Duration keepAliveDuration;
 
 
 	/**
@@ -100,8 +103,8 @@ public class GraphQlWebSocketHandler implements WebSocketHandler {
 	 * @param codecConfigurer codec configurer for JSON encoding and decoding
 	 * @param connectionInitTimeout how long to wait after the establishment of
 	 * the WebSocket for the {@code "connection_ini"} message from the client.
-	 * @param keepAliveDuration how frequently to send ping messages; if not
-	 * set then ping messages are not sent.
+	 * @param keepAliveDuration how frequently to send ping messages when no
+	 * other messages are sent
 	 * @since 1.3
 	 */
 	public GraphQlWebSocketHandler(
@@ -137,7 +140,7 @@ public class GraphQlWebSocketHandler implements WebSocketHandler {
 
 		// Session state
 		WebSocketSessionInfo sessionInfo = new WebFluxSessionInfo(session);
-		AtomicReference<Map<String, Object>> connectionInitPayloadRef = new AtomicReference<>();
+		AtomicReference<@Nullable  Map<String, Object>> connectionInitPayloadRef = new AtomicReference<>();
 		Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();
 
 		Mono.delay(this.initTimeoutDuration)
@@ -160,6 +163,9 @@ public class GraphQlWebSocketHandler implements WebSocketHandler {
 
 		return session.send(session.receive().flatMap((webSocketMessage) -> {
 			GraphQlWebSocketMessage message = this.codecDelegate.decode(webSocketMessage);
+			if (message == null) {
+				return GraphQlStatus.close(session, GraphQlStatus.INVALID_MESSAGE_STATUS);
+			}
 			String id = message.getId();
 			Map<String, Object> payload = message.getPayload();
 			switch (message.resolvedType()) {
@@ -256,7 +262,20 @@ public class GraphQlWebSocketHandler implements WebSocketHandler {
 						CloseStatus status = new CloseStatus(4409, "Subscriber for " + id + " already exists");
 						return GraphQlStatus.close(session, status);
 					}
-					return Mono.fromCallable(() -> this.codecDelegate.encodeError(session, id, ex));
+					List<GraphQLError> errors;
+					if (ex instanceof SubscriptionPublisherException subscriptionEx) {
+						errors = subscriptionEx.getErrors();
+					}
+					else {
+						if (logger.isErrorEnabled()) {
+							logger.error("Unresolved " + ex.getClass().getSimpleName() + " for request id " + id, ex);
+						}
+						errors = Collections.singletonList(GraphqlErrorBuilder.newError()
+								.message("Subscription error")
+								.errorType(ErrorType.INTERNAL_ERROR)
+								.build());
+					}
+					return Mono.fromCallable(() -> this.codecDelegate.encodeError(session, id, errors));
 				});
 	}
 
@@ -312,7 +331,7 @@ public class GraphQlWebSocketHandler implements WebSocketHandler {
 		}
 
 		@Override
-		public InetSocketAddress getRemoteAddress() {
+		public @Nullable InetSocketAddress getRemoteAddress() {
 			return this.session.getHandshakeInfo().getRemoteAddress();
 		}
 	}

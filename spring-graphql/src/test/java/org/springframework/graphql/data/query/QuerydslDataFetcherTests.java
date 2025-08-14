@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -215,14 +215,14 @@ class QuerydslDataFetcherTests {
 				.many();
 
 		graphQlSetup("books", fetcher).toWebGraphQlHandler()
-				.handleRequest(request("{ books(name: \"H\", author: \"Doug\") {name}}"))
+				.handleRequest(request("{ books(name: \"H\") {name}}"))
 				.block();
 
 		ArgumentCaptor<Predicate> predicateCaptor = ArgumentCaptor.forClass(Predicate.class);
 		verify(mockRepository).findBy(predicateCaptor.capture(), any());
 
 		Predicate predicate = predicateCaptor.getValue();
-		assertThat(predicate).isEqualTo(QBook.book.name.startsWith("H").and(QBook.book.author.eq("Doug")));
+		assertThat(predicate).isEqualTo(QBook.book.name.startsWith("H"));
 	}
 
 	@Test
@@ -339,6 +339,25 @@ class QuerydslDataFetcherTests {
 				graphQlSetup(queryName, QuerydslDataFetcher.builder(mockRepository).many())
 						.toGraphQlService()
 						.execute(request("{" + queryName + "(criteria: {id: 42}) {name}}"));
+
+		List<Book> books = ResponseHelper.forResponse(responseMono).toList(queryName, Book.class);
+
+		assertThat(books).hasSize(1);
+		assertThat(books.get(0).getName()).isEqualTo(book1.getName());
+	}
+
+	@Test // gh-1081
+	void shouldConsiderNestedArguments() {
+		Book book1 = new Book(42L, "Hitchhiker's Guide to the Galaxy", new Author(0L, "Douglas", "Adams"));
+		Book book2 = new Book(53L, "Breaking Bad", new Author(0L, "", "Heisenberg"));
+		mockRepository.saveAll(Arrays.asList(book1, book2));
+
+		String queryName = "booksByNestedCriteria";
+
+		Mono<ExecutionGraphQlResponse> responseMono =
+				graphQlSetup(queryName, QuerydslDataFetcher.builder(mockRepository).many())
+						.toGraphQlService()
+						.execute(request("{" + queryName + "(author: {firstName: \"Douglas\"}) {name}}"));
 
 		List<Book> books = ResponseHelper.forResponse(responseMono).toList(queryName, Book.class);
 

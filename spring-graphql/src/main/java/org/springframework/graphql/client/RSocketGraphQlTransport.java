@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,7 +89,8 @@ final class RSocketGraphQlTransport implements GraphQlTransport {
 	@SuppressWarnings("unchecked")
 	private Exception decodeErrors(GraphQlRequest request, RejectedException ex) {
 		try {
-			byte[] errorData = ex.getMessage().getBytes(StandardCharsets.UTF_8);
+			String errorMessage = (ex.getMessage() != null) ? ex.getMessage() : "";
+			byte[] errorData = errorMessage.getBytes(StandardCharsets.UTF_8);
 			List<GraphQLError> errors = (List<GraphQLError>) this.jsonDecoder.decode(
 					DefaultDataBufferFactory.sharedInstance.wrap(errorData), LIST_TYPE, null, null);
 			GraphQlResponse response = new ResponseMapGraphQlResponse(Collections.singletonMap("errors", errors));

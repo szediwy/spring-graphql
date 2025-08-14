@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,17 +21,18 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
+import tools.jackson.databind.ObjectMapper;
 
 import org.springframework.core.codec.DataBufferEncoder;
 import org.springframework.core.io.buffer.DefaultDataBuffer;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.graphql.GraphQlSetup;
+import org.springframework.graphql.MediaTypes;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.support.SerializableGraphQlRequest;
 import org.springframework.http.MediaType;
@@ -41,8 +42,8 @@ import org.springframework.http.codec.EncoderHttpMessageWriter;
 import org.springframework.http.codec.HttpMessageReader;
 import org.springframework.http.codec.HttpMessageWriter;
 import org.springframework.http.codec.ServerCodecConfigurer;
-import org.springframework.http.codec.json.Jackson2JsonDecoder;
-import org.springframework.http.codec.json.Jackson2JsonEncoder;
+import org.springframework.http.codec.json.JacksonJsonDecoder;
+import org.springframework.http.codec.json.JacksonJsonEncoder;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.http.server.reactive.MockServerHttpResponse;
 import org.springframework.mock.web.server.MockServerWebExchange;
@@ -56,10 +57,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Tests for {@link GraphQlHttpHandler}.
  * @author Rossen Stoyanchev
  */
-public class GraphQlHttpHandlerTests {
+class GraphQlHttpHandlerTests {
 
 	private static final List<HttpMessageReader<?>> MESSAGE_READERS =
-			List.of(new DecoderHttpMessageReader<>(new Jackson2JsonDecoder()));
+			List.of(new DecoderHttpMessageReader<>(new JacksonJsonDecoder()));
 
 	private final GraphQlHttpHandler greetingHandler =
 			GraphQlSetup.schemaContent("type Query { greeting: String }")
@@ -119,12 +120,12 @@ public class GraphQlHttpHandlerTests {
 	void shouldProduceApplicationGraphQl() throws Exception {
 		MockServerHttpRequest httpRequest = MockServerHttpRequest.post("/")
 				.contentType(MediaType.APPLICATION_JSON)
-				.accept(MediaType.APPLICATION_GRAPHQL_RESPONSE)
+				.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
 				.body(initRequestBody("{greeting}"));
 
 		MockServerHttpResponse httpResponse = handleRequest(httpRequest, this.greetingHandler);
 
-		assertThat(httpResponse.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_GRAPHQL_RESPONSE);
+		assertThat(httpResponse.getHeaders().getContentType()).isEqualTo(MediaTypes.APPLICATION_GRAPHQL_RESPONSE);
 	}
 
 	@Test
@@ -147,7 +148,7 @@ public class GraphQlHttpHandlerTests {
 
 		MockServerHttpRequest httpRequest = MockServerHttpRequest.post("/")
 				.contentType(MediaType.APPLICATION_JSON)
-				.accept(MediaType.APPLICATION_GRAPHQL_RESPONSE)
+				.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
 				.acceptLanguageAsLocales(Locale.FRENCH)
 				.body(initRequestBody("{greeting}"));
 
@@ -165,7 +166,7 @@ public class GraphQlHttpHandlerTests {
 
 		MockServerHttpRequest httpRequest = MockServerHttpRequest.post("/")
 				.contentType(MediaType.APPLICATION_JSON)
-				.accept(MediaType.APPLICATION_GRAPHQL_RESPONSE)
+				.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
 				.body(initRequestBody("{showId}"));
 
 		MockServerHttpResponse httpResponse = handleRequest(httpRequest, handler);
@@ -183,15 +184,15 @@ public class GraphQlHttpHandlerTests {
 
 		ObjectMapper mapper = new ObjectMapper();
 		CodecConfigurer configurer = ServerCodecConfigurer.create();
-		configurer.defaultCodecs().jackson2JsonDecoder(new Jackson2JsonDecoder(mapper));
-		configurer.defaultCodecs().jackson2JsonEncoder(new Jackson2JsonEncoder(mapper));
+		configurer.defaultCodecs().jacksonJsonDecoder(new JacksonJsonDecoder(mapper));
+		configurer.defaultCodecs().jacksonJsonEncoder(new JacksonJsonEncoder(mapper));
 
 		byte[] bytes = "{\"query\": \"{showId}\"}".getBytes(StandardCharsets.UTF_8);
 		Flux<DefaultDataBuffer> body = Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(bytes));
 
 		MockServerHttpRequest httpRequest = MockServerHttpRequest.post("/")
 				.contentType(MediaType.APPLICATION_JSON)
-				.accept(MediaType.APPLICATION_GRAPHQL_RESPONSE)
+				.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
 				.body(body);
 
 		MockServerWebExchange exchange = MockServerWebExchange.from(httpRequest);
@@ -229,7 +230,7 @@ public class GraphQlHttpHandlerTests {
 
 		@Override
 		public List<HttpMessageWriter<?>> messageWriters() {
-			return Collections.singletonList(new EncoderHttpMessageWriter<>(new Jackson2JsonEncoder()));
+			return Collections.singletonList(new EncoderHttpMessageWriter<>(new JacksonJsonEncoder()));
 		}
 
 		@Override

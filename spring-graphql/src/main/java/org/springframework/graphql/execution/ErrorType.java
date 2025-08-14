@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,6 +57,6 @@ public enum ErrorType implements ErrorClassification {
 	 * {@link graphql.schema.DataFetcher} encountered an unexpected condition that
 	 * prevented it from fetching the data value.
 	 */
-	INTERNAL_ERROR;
+	INTERNAL_ERROR
 
 }

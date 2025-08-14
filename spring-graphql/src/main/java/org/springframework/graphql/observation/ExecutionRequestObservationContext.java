@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,7 @@ package org.springframework.graphql.observation;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import io.micrometer.observation.Observation;
-
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Context that holds information for metadata collection during observations
@@ -33,8 +32,7 @@ public class ExecutionRequestObservationContext extends Observation.Context {
 
 	private final ExecutionInput executionInput;
 
-	@Nullable
-	private ExecutionResult executionResult;
+	private @Nullable ExecutionResult executionResult;
 
 	public ExecutionRequestObservationContext(ExecutionInput executionInput) {
 		this.executionInput = executionInput;
@@ -49,20 +47,10 @@ public class ExecutionRequestObservationContext extends Observation.Context {
 	}
 
 	/**
-	 * Return the {@link ExecutionInput input} for the request execution.
-	 * @deprecated since 1.1.4 in favor of {@link #getExecutionInput()}
-	 */
-	@Deprecated(since = "1.1.4", forRemoval = true)
-	public ExecutionInput getCarrier() {
-		return this.executionInput;
-	}
-
-	/**
 	 * Return the {@link ExecutionResult result} for the request execution.
 	 * @since 1.1.4
 	 */
-	@Nullable
-	public ExecutionResult getExecutionResult() {
+	public @Nullable ExecutionResult getExecutionResult() {
 		return this.executionResult;
 	}
 
@@ -73,16 +61,6 @@ public class ExecutionRequestObservationContext extends Observation.Context {
 	 */
 	public void setExecutionResult(ExecutionResult executionResult) {
 		this.executionResult = executionResult;
-	}
-
-	/**
-	 * Return the {@link ExecutionResult result} for the request execution.
-	 * @deprecated since 1.1.4 in favor of {@link #getExecutionResult()}
-	 */
-	@Nullable
-	@Deprecated(since = "1.1.4", forRemoval = true)
-	public ExecutionResult getResponse() {
-		return this.executionResult;
 	}
 
 }

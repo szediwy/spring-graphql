@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Consumer;
 
 import graphql.schema.DataFetchingEnvironment;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.beans.BeanInstantiationException;
 import org.springframework.beans.BeanUtils;
@@ -41,12 +41,11 @@ import org.springframework.core.ResolvableType;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.TypeDescriptor;
 import org.springframework.data.util.DirectFieldAccessFallbackBeanWrapper;
-import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.validation.AbstractBindingResult;
 import org.springframework.validation.BindException;
-import org.springframework.validation.DataBinder;
 import org.springframework.validation.FieldError;
 
 
@@ -78,48 +77,55 @@ import org.springframework.validation.FieldError;
  */
 public class GraphQlArgumentBinder {
 
-	@Nullable
-	private final SimpleTypeConverter typeConverter;
+	private final @Nullable SimpleTypeConverter typeConverter;
+
+	private final @Nullable NameResolver nameResolver;
 
 	private final boolean fallBackOnDirectFieldAccess;
 
 
+	/**
+	 * Default constructor.
+	 */
 	public GraphQlArgumentBinder() {
-		this(null);
+		this(Options.create());
 	}
 
+	/**
+	 * Constructor with additional flag for direct field access support.
+	 * @param conversionService the service to use
+	 * @deprecated in favor of {@link #GraphQlArgumentBinder(Options)}
+	 */
+	@Deprecated(since = "2.0", forRemoval = true)
 	public GraphQlArgumentBinder(@Nullable ConversionService conversionService) {
-		this(conversionService, false);
+		this(Options.create().conversionService(conversionService));
 	}
 
-	public GraphQlArgumentBinder(@Nullable ConversionService conversionService, boolean fallBackOnDirectFieldAccess) {
-		this.typeConverter = initTypeConverter(conversionService);
-		this.fallBackOnDirectFieldAccess = fallBackOnDirectFieldAccess;
+	/**
+	 * Constructor with additional flag for direct field access support.
+	 * @param service the service to use
+	 * @param fallBackOnDirectFieldAccess whether to fall back on direct field access
+	 * @deprecated in favor of {@link #GraphQlArgumentBinder(Options)}
+	 */
+	@Deprecated(since = "2.0", forRemoval = true)
+	public GraphQlArgumentBinder(@Nullable ConversionService service, boolean fallBackOnDirectFieldAccess) {
+		this(Options.create().conversionService(service).fallBackOnDirectFieldAccess(fallBackOnDirectFieldAccess));
 	}
 
-	@Nullable
-	private static SimpleTypeConverter initTypeConverter(@Nullable ConversionService conversionService) {
-		if (conversionService == null) {
+	public GraphQlArgumentBinder(Options options) {
+		this.typeConverter = initTypeConverter(options.conversionService());
+		this.nameResolver = options.nameResolver();
+		this.fallBackOnDirectFieldAccess = options.fallBackOnDirectFieldAccess();
+	}
+
+	private static @Nullable SimpleTypeConverter initTypeConverter(@Nullable ConversionService service) {
+		if (service == null) {
 			//  Not thread-safe when using PropertyEditors
 			return null;
 		}
 		SimpleTypeConverter typeConverter = new SimpleTypeConverter();
-		typeConverter.setConversionService(conversionService);
+		typeConverter.setConversionService(service);
 		return typeConverter;
-	}
-
-
-
-	/**
-	 * Add a {@link DataBinder} consumer that initializes the binder instance
-	 * before the binding process.
-	 * @param consumer the data binder initializer
-	 * @since 1.0.1
-	 * @deprecated this property is deprecated, ignored, and should not be
-	 * necessary as a {@link DataBinder} is no longer used to bind arguments
-	 */
-	@Deprecated(since = "1.1.0", forRemoval = true)
-	public void addDataBinderInitializer(Consumer<DataBinder> consumer) {
 	}
 
 
@@ -134,8 +140,7 @@ public class GraphQlArgumentBinder {
 	 * @throws BindException containing one or more accumulated errors from
 	 * matching and/or converting arguments to the target Object
 	 */
-	@Nullable
-	public Object bind(
+	public @Nullable Object bind(
 			DataFetchingEnvironment environment, @Nullable String name, ResolvableType targetType)
 			throws BindException {
 
@@ -154,8 +159,7 @@ public class GraphQlArgumentBinder {
 	 * @param targetType the type of Object to create
 	 * @since 1.3.0
 	 */
-	@Nullable
-	public Object bind(@Nullable Object rawValue, boolean isOmitted, ResolvableType targetType) throws BindException {
+	public @Nullable Object bind(@Nullable Object rawValue, boolean isOmitted, ResolvableType targetType) throws BindException {
 		ArgumentsBindingResult bindingResult = new ArgumentsBindingResult(targetType);
 		Class<?> targetClass = targetType.resolve(Object.class);
 		Object value = bindRawValue("$", rawValue, isOmitted, targetType, targetClass, bindingResult);
@@ -183,8 +187,7 @@ public class GraphQlArgumentBinder {
 	 * a {@link BindException} at the end to record as many errors as possible
 	 */
 	@SuppressWarnings({"ConstantConditions", "unchecked"})
-	@Nullable
-	private Object bindRawValue(
+	private @Nullable Object bindRawValue(
 			String name, @Nullable Object rawValue, boolean isOmitted,
 			ResolvableType targetType, Class<?> targetClass, ArgumentsBindingResult bindingResult) {
 
@@ -194,6 +197,11 @@ public class GraphQlArgumentBinder {
 		if (isOptional || isArgumentValue) {
 			targetType = targetType.getNested(2);
 			targetClass = targetType.resolve();
+			Assert.state(targetClass != null, "Could not resolve target type for: " + targetType);
+		}
+
+		if (this.nameResolver != null) {
+			name = this.nameResolver.resolveName(name);
 		}
 
 		Object value;
@@ -244,8 +252,7 @@ public class GraphQlArgumentBinder {
 		return collection;
 	}
 
-	@Nullable
-	private Object bindMap(
+	private @Nullable Object bindMap(
 			String name, Map<String, Object> rawMap, ResolvableType targetType, Class<?> targetClass,
 			ArgumentsBindingResult bindingResult) {
 
@@ -258,8 +265,8 @@ public class GraphQlArgumentBinder {
 		Constructor<?> constructor = BeanUtils.getResolvableConstructor(targetClass);
 
 		Object value = (constructor.getParameterCount() > 0) ?
-				bindMapToObjectViaConstructor(rawMap, constructor, targetType, bindingResult) :
-				bindMapToObjectViaSetters(rawMap, constructor, targetType, bindingResult);
+				bindViaConstructorAndSetters(constructor, rawMap, targetType, bindingResult) :
+				bindViaSetters(constructor, rawMap, targetType, bindingResult);
 
 		bindingResult.popNestedPath();
 
@@ -287,27 +294,40 @@ public class GraphQlArgumentBinder {
 		return map;
 	}
 
-	@Nullable
-	private Object bindMapToObjectViaConstructor(
-			Map<String, Object> rawMap, Constructor<?> constructor, ResolvableType ownerType,
-			ArgumentsBindingResult bindingResult) {
+	private @Nullable Object bindViaConstructorAndSetters(Constructor<?> constructor,
+			Map<String, Object> rawMap, ResolvableType ownerType, ArgumentsBindingResult bindingResult) {
 
-		String[] paramNames = BeanUtils.getParameterNames(constructor);
+		@Nullable String[] paramNames = BeanUtils.getParameterNames(constructor);
 		Class<?>[] paramTypes = constructor.getParameterTypes();
-		Object[] constructorArguments = new Object[paramTypes.length];
+		@Nullable Object[] constructorArguments = new Object[paramTypes.length];
 
 		for (int i = 0; i < paramNames.length; i++) {
 			String name = paramNames[i];
+			Assert.notNull(name, () -> "Missing parameter name in " + constructor);
 
 			ResolvableType targetType = ResolvableType.forType(
 					ResolvableType.forConstructorParameter(constructor, i).getType(), ownerType);
 
+			Object rawValue = rawMap.get(name);
+			boolean isNotPresent = !rawMap.containsKey(name);
+
+			if (rawValue == null && this.nameResolver != null) {
+				for (String key : rawMap.keySet()) {
+					if (this.nameResolver.resolveName(key).equals(name)) {
+						rawValue = rawMap.get(key);
+						isNotPresent = false;
+						break;
+					}
+				}
+			}
+
 			constructorArguments[i] = bindRawValue(
-					name, rawMap.get(name), !rawMap.containsKey(name), targetType, paramTypes[i], bindingResult);
+					name, rawValue, isNotPresent, targetType, paramTypes[i], bindingResult);
 		}
 
+		Object target;
 		try {
-			return BeanUtils.instantiateClass(constructor, constructorArguments);
+			target = BeanUtils.instantiateClass(constructor, constructorArguments);
 		}
 		catch (BeanInstantiationException ex) {
 			// Ignore, if we had binding errors to begin with
@@ -316,18 +336,34 @@ public class GraphQlArgumentBinder {
 			}
 			throw ex;
 		}
+
+		// If no errors, apply setters too
+		if (!bindingResult.hasErrors()) {
+			bindViaSetters(target, rawMap, ownerType, bindingResult);
+		}
+
+		return target;
 	}
 
-	private Object bindMapToObjectViaSetters(
-			Map<String, Object> rawMap, Constructor<?> constructor, ResolvableType ownerType,
-			ArgumentsBindingResult bindingResult) {
+	private Object bindViaSetters(Constructor<?> constructor,
+			Map<String, Object> rawMap, ResolvableType ownerType, ArgumentsBindingResult bindingResult) {
 
 		Object target = BeanUtils.instantiateClass(constructor);
+		bindViaSetters(target, rawMap, ownerType, bindingResult);
+		return target;
+	}
+
+	private void bindViaSetters(Object target,
+			Map<String, Object> rawMap, ResolvableType ownerType, ArgumentsBindingResult bindingResult) {
+
 		BeanWrapper beanWrapper = (this.fallBackOnDirectFieldAccess ?
 				new DirectFieldAccessFallbackBeanWrapper(target) : PropertyAccessorFactory.forBeanPropertyAccess(target));
 
 		for (Map.Entry<String, Object> entry : rawMap.entrySet()) {
 			String key = entry.getKey();
+			if (this.nameResolver != null) {
+				key = this.nameResolver.resolveName(key);
+			}
 			TypeDescriptor typeDescriptor = beanWrapper.getPropertyTypeDescriptor(key);
 			if (typeDescriptor == null && this.fallBackOnDirectFieldAccess) {
 				Field field = ReflectionUtils.findField(beanWrapper.getWrappedClass(), key);
@@ -358,13 +394,10 @@ public class GraphQlArgumentBinder {
 				bindingResult.rejectArgumentValue(key, value, "invalidPropertyValue", "Failed to set property value");
 			}
 		}
-
-		return target;
 	}
 
 	@SuppressWarnings("unchecked")
-	@Nullable
-	private <T> T convertValue(
+	private @Nullable <T> T convertValue(
 			String name, @Nullable Object rawValue, ResolvableType type, Class<T> clazz,
 			ArgumentsBindingResult bindingResult) {
 
@@ -381,6 +414,102 @@ public class GraphQlArgumentBinder {
 		}
 
 		return (T) value;
+	}
+
+
+	/**
+	 * Container of configuration settings for {@link GraphQlArgumentBinder}.
+	 * @since 2.0.0
+	 */
+	public static final class Options {
+
+		private final @Nullable ConversionService conversionService;
+
+		private final @Nullable NameResolver nameResolver;
+
+		private final boolean fallBackOnDirectFieldAccess;
+
+		private Options(@Nullable ConversionService conversionService, @Nullable NameResolver nameResolver,
+				boolean fallBackOnDirectFieldAccess) {
+
+			this.conversionService = conversionService;
+			this.nameResolver = nameResolver;
+			this.fallBackOnDirectFieldAccess = fallBackOnDirectFieldAccess;
+		}
+
+		/**
+		 * Add a {@link ConversionService} to apply type conversion to argument
+		 * values where needed.
+		 * @param service the service to use
+		 */
+		public Options conversionService(@Nullable ConversionService service) {
+			return new Options(service, this.nameResolver, this.fallBackOnDirectFieldAccess);
+		}
+
+		/**
+		 * Add a resolver to help to map GraphQL argument names to Object property names.
+		 * @param resolver the resolver to add
+		 */
+		public Options nameResolver(NameResolver resolver) {
+			resolver = ((this.nameResolver != null) ? this.nameResolver.andThen(resolver) : resolver);
+			return new Options(this.conversionService, resolver, this.fallBackOnDirectFieldAccess);
+		}
+
+		/**
+		 * Whether binding GraphQL arguments onto
+		 * {@link org.springframework.graphql.data.method.annotation.Argument @Argument}
+		 * should falls back to direct field access in case the target object does
+		 * not use accessor methods.
+		 * @param fallBackOnDirectFieldAccess whether to fall back on direct field access
+		 */
+		public Options fallBackOnDirectFieldAccess(boolean fallBackOnDirectFieldAccess) {
+			return new Options(this.conversionService, this.nameResolver, fallBackOnDirectFieldAccess);
+		}
+
+		public @Nullable ConversionService conversionService() {
+			return this.conversionService;
+		}
+
+		public @Nullable NameResolver nameResolver() {
+			return this.nameResolver;
+		}
+
+		public boolean fallBackOnDirectFieldAccess() {
+			return this.fallBackOnDirectFieldAccess;
+		}
+
+		/**
+		 * Create an instance without any options set.
+		 */
+		public static Options create() {
+			return new Options(null, (name) -> name, false);
+		}
+	}
+
+
+	/**
+	 * Contract to customize the mapping of GraphQL argument names to Object
+	 * properties. This can be useful for dealing with naming conventions like
+	 * the use of "-" that cannot be used in Java property names.
+	 * @since 2.0.0
+	 */
+	public interface NameResolver {
+
+		/**
+		 * Resolve the given GraphQL argument name to an Object property name.
+		 * @param name the argument name
+		 * @return the resolved name to use
+		 */
+		String resolveName(String name);
+
+		/**
+		 * Append another resolver to be invoked after the current one.
+		 * @param resolver the resolver to invoked
+		 * @return a new composite resolver
+		 */
+		default NameResolver andThen(NameResolver resolver) {
+			return (name) -> resolver.resolveName(resolveName(name));
+		}
 	}
 
 
@@ -402,12 +531,12 @@ public class GraphQlArgumentBinder {
 		}
 
 		@Override
-		public Object getTarget() {
+		public @Nullable Object getTarget() {
 			return null;
 		}
 
 		@Override
-		protected Object getActualFieldValue(String field) {
+		protected @Nullable Object getActualFieldValue(String field) {
 			return null;
 		}
 

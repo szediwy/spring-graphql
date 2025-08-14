@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.springframework.graphql.data.method.annotation.support;
 import java.util.concurrent.Executor;
 
 import graphql.schema.DataFetchingEnvironment;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.MethodParameter;
@@ -26,7 +27,6 @@ import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.graphql.data.method.HandlerMethod;
 import org.springframework.graphql.data.method.HandlerMethodArgumentResolverComposite;
 import org.springframework.graphql.data.method.InvocableHandlerMethodSupport;
-import org.springframework.lang.Nullable;
 import org.springframework.util.ObjectUtils;
 
 
@@ -69,7 +69,7 @@ public class DataFetcherHandlerMethodSupport extends InvocableHandlerMethodSuppo
 	 * @param environment the data fetching environment to resolve arguments from
 	 * @param providedArgs the arguments provided directly
 	 */
-	protected Object[] getMethodArgumentValues(
+	protected @Nullable Object[] getMethodArgumentValues(
 			DataFetchingEnvironment environment, Object... providedArgs) throws Exception {
 
 		MethodParameter[] parameters = getMethodParameters();
@@ -77,7 +77,7 @@ public class DataFetcherHandlerMethodSupport extends InvocableHandlerMethodSuppo
 			return EMPTY_ARGS;
 		}
 
-		Object[] args = new Object[parameters.length];
+		@Nullable Object[] args = new Object[parameters.length];
 		for (int i = 0; i < parameters.length; i++) {
 			MethodParameter parameter = parameters[i];
 			parameter.initParameterNameDiscovery(this.parameterNameDiscoverer);

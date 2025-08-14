@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@
 package org.springframework.graphql.data.query;
 
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.data.domain.KeysetScrollPosition;
 import org.springframework.data.domain.OffsetScrollPosition;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.graphql.data.pagination.Subrange;
-import org.springframework.lang.Nullable;
 
 /**
  * {@link Subrange} implementation for a {@link ScrollPosition} cursor.

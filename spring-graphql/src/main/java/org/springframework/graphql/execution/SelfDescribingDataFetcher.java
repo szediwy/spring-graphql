@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,6 +57,17 @@ public interface SelfDescribingDataFetcher<T> extends DataFetcher<T> {
 	 */
 	default Map<String, ResolvableType> getArguments() {
 		return Collections.emptyMap();
+	}
+
+	/**
+	 * Whether this {@code DataFetcher} uses a {@link org.dataloader.DataLoader}
+	 * to return data. This represents a deferred operation that is typically
+	 * repeatable, and a candidate for aggregation from a metrics and tracing
+	 * perspective.
+	 * @since 1.4.0
+	 */
+	default boolean usesDataLoader() {
+		return false;
 	}
 
 }

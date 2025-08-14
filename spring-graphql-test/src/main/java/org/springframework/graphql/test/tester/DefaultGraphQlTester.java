@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,8 @@ import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.TypeRef;
+import org.jspecify.annotations.Nullable;
+import org.skyscreamer.jsonassert.JSONAssert;
 
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.ResolvableType;
@@ -40,9 +42,7 @@ import org.springframework.graphql.ResponseError;
 import org.springframework.graphql.client.GraphQlTransport;
 import org.springframework.graphql.support.DefaultGraphQlRequest;
 import org.springframework.graphql.support.DocumentSource;
-import org.springframework.lang.Nullable;
 import org.springframework.test.util.AssertionErrors;
-import org.springframework.test.util.JsonExpectationsHelper;
 import org.springframework.test.util.JsonPathExpectationsHelper;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
@@ -61,8 +61,7 @@ final class DefaultGraphQlTester implements GraphQlTester {
 
 	private final GraphQlTransport transport;
 
-	@Nullable
-	private final Predicate<ResponseError> errorFilter;
+	private final @Nullable Predicate<ResponseError> errorFilter;
 
 	private final Configuration jsonPathConfig;
 
@@ -120,8 +119,7 @@ final class DefaultGraphQlTester implements GraphQlTester {
 
 		private final String document;
 
-		@Nullable
-		private String operationName;
+		private @Nullable String operationName;
 
 		List<String> fragments = new ArrayList<>();
 
@@ -173,7 +171,7 @@ final class DefaultGraphQlTester implements GraphQlTester {
 			return this;
 		}
 
-		@SuppressWarnings("ConstantConditions")
+		@SuppressWarnings({"ConstantConditions", "NullAway"})
 		@Override
 		public Response execute() {
 			return DefaultGraphQlTester.this.transport.execute(request())
@@ -309,12 +307,15 @@ final class DefaultGraphQlTester implements GraphQlTester {
 	 */
 	private static final class DefaultResponse implements Response, Errors {
 
+		private final GraphQlResponse response;
+
 		private final ResponseDelegate delegate;
 
 		private DefaultResponse(
 				GraphQlResponse response, @Nullable Predicate<ResponseError> errorFilter,
 				Consumer<Runnable> assertDecorator, Configuration jsonPathConfig) {
 
+			this.response = response;
 			this.delegate = new ResponseDelegate(response, errorFilter, assertDecorator, jsonPathConfig);
 		}
 
@@ -333,6 +334,11 @@ final class DefaultGraphQlTester implements GraphQlTester {
 		@Override
 		public Errors errors() {
 			return this;
+		}
+
+		@Override
+		public GraphQlResponse returnResponse() {
+			return this.response;
 		}
 
 		@Override
@@ -366,8 +372,7 @@ final class DefaultGraphQlTester implements GraphQlTester {
 	 */
 	private static final class DefaultPath implements Path {
 
-		@Nullable
-		private final String basePath;
+		private final @Nullable String basePath;
 
 		private final String path;
 
@@ -469,7 +474,7 @@ final class DefaultGraphQlTester implements GraphQlTester {
 			this.delegate.doAssert(() -> {
 				String actual = this.delegate.jsonContent(this.jsonPath);
 				try {
-					new JsonExpectationsHelper().assertJsonEqual(expected, actual, strict);
+					JSONAssert.assertEquals(expected, actual, strict);
 				}
 				catch (AssertionError ex) {
 					throw new AssertionError(ex.getMessage() + "\n\n" + "Expected JSON content:\n'" + expected + "'\n\n"

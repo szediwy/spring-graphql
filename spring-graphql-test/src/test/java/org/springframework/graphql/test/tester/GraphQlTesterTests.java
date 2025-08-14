@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.graphql.ExecutionGraphQlRequest;
 import org.springframework.graphql.ExecutionGraphQlService;
 import org.springframework.graphql.GraphQlRequest;
+import org.springframework.graphql.GraphQlResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
@@ -41,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * @author Rossen Stoyanchev
  * @author Brian Clozel
  */
-public class GraphQlTesterTests extends GraphQlTesterTestSupport {
+class GraphQlTesterTests extends GraphQlTesterTestSupport {
 
 	@Test
 	void missingDocumentByName() {
@@ -498,6 +499,16 @@ public class GraphQlTesterTests extends GraphQlTesterTestSupport {
 				.path("me").pathDoesNotExist();
 
 		assertThat(getActualRequestDocument()).contains(document);
+	}
+
+	@Test
+	void returnGraphQlResponse() {
+		String document = "{me {name, friends}}";
+		getGraphQlService().setDataAsJson(document, "{\"me\": {\"name\":\"Luke Skywalker\", \"friends\":[]}}");
+
+		GraphQlResponse response = graphQlTester().documentName("me").execute().returnResponse();
+		String value = response.field("me.name").getValue();
+		assertThat(value).isEqualTo("Luke Skywalker");
 	}
 
 }

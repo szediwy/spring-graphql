@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,6 @@ import org.springframework.core.annotation.MergedAnnotations;
 import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.data.projection.TargetAware;
 import org.springframework.graphql.data.ArgumentValue;
-import org.springframework.graphql.data.federation.EntityMapping;
 import org.springframework.graphql.data.method.HandlerMethodArgumentResolver;
 import org.springframework.graphql.data.method.HandlerMethodArgumentResolverComposite;
 import org.springframework.graphql.data.method.annotation.BatchMapping;
@@ -140,7 +139,7 @@ class SchemaMappingBeanFactoryInitializationAotProcessor implements BeanFactoryI
 			RuntimeHints runtimeHints = context.getRuntimeHints();
 			registerSpringDataSpelSupport(runtimeHints);
 			this.controllers.forEach((controller) -> {
-				runtimeHints.reflection().registerType(controller, MemberCategory.INTROSPECT_DECLARED_METHODS);
+				runtimeHints.reflection().registerType(controller);
 				ReflectionUtils.doWithMethods(controller,
 						(method) -> processSchemaMappingMethod(runtimeHints, method),
 						this::isGraphQlHandlerMethod);
@@ -149,7 +148,7 @@ class SchemaMappingBeanFactoryInitializationAotProcessor implements BeanFactoryI
 						this::isExceptionHandlerMethod);
 			});
 			this.controllerAdvices.forEach((controllerAdvice) -> {
-				runtimeHints.reflection().registerType(controllerAdvice, MemberCategory.INTROSPECT_DECLARED_METHODS);
+				runtimeHints.reflection().registerType(controllerAdvice);
 				ReflectionUtils.doWithMethods(controllerAdvice,
 						(method) -> processExceptionHandlerMethod(runtimeHints, method),
 						this::isExceptionHandlerMethod);
@@ -169,7 +168,7 @@ class SchemaMappingBeanFactoryInitializationAotProcessor implements BeanFactoryI
 		private boolean isGraphQlHandlerMethod(AnnotatedElement element) {
 			MergedAnnotations annotations = MergedAnnotations.from(element, MergedAnnotations.SearchStrategy.TYPE_HIERARCHY);
 			return annotations.isPresent(SchemaMapping.class) || annotations.isPresent(BatchMapping.class)
-					|| annotations.isPresent(EntityMapping.class);
+					|| annotations.isPresent("org.springframework.graphql.data.federation.EntityMapping");
 		}
 
 		private boolean isExceptionHandlerMethod(AnnotatedElement element) {

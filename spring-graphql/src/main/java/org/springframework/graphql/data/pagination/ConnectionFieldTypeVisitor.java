@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 the original author or authors.
+ * Copyright 2020-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,6 @@ import graphql.schema.GraphQLFieldsContainer;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
-import graphql.schema.GraphQLOutputType;
 import graphql.schema.GraphQLSchemaElement;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeVisitorStub;
@@ -47,10 +46,10 @@ import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 import org.springframework.graphql.execution.TypeVisitorHelper;
-import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
 /**
@@ -145,27 +144,30 @@ public final class ConnectionFieldTypeVisitor extends GraphQLTypeVisitorStub {
 		return true;
 	}
 
-	@Nullable
-	private static GraphQLObjectType getAsObjectType(@Nullable GraphQLFieldDefinition field) {
+	private static @Nullable GraphQLObjectType getAsObjectType(@Nullable GraphQLFieldDefinition field) {
 		return (getType(field) instanceof GraphQLObjectType type) ? type : null;
 	}
 
-	@Nullable
-	private static GraphQLObjectType getEdgeType(@Nullable GraphQLFieldDefinition field) {
+	private static @Nullable GraphQLObjectType getEdgeType(@Nullable GraphQLFieldDefinition field) {
 		if (getType(field) instanceof GraphQLList listType) {
-			if (listType.getWrappedType() instanceof GraphQLObjectType type) {
+			if (unwrapNonNullType(listType.getWrappedType()) instanceof GraphQLObjectType type) {
 				return type;
 			}
 		}
 		return null;
 	}
 
-	@Nullable
-	private static GraphQLType getType(@Nullable GraphQLFieldDefinition field) {
+	private static @Nullable GraphQLType getType(@Nullable GraphQLFieldDefinition field) {
 		if (field == null) {
 			return null;
 		}
-		GraphQLOutputType type = field.getType();
+		return unwrapNonNullType(field.getType());
+	}
+
+	private static @Nullable GraphQLType unwrapNonNullType(@Nullable GraphQLType type) {
+		if (type == null) {
+			return null;
+		}
 		return (type instanceof GraphQLNonNull nonNullType) ? nonNullType.getWrappedType() : type;
 	}
 
@@ -184,14 +186,16 @@ public final class ConnectionFieldTypeVisitor extends GraphQLTypeVisitorStub {
 
 	/**
 	 * {@code DataFetcher} decorator that adapts return values with an adapter.
+	 * @param delegate the datafetcher delegate
+	 * @param adapter the connection adapter to use
 	 */
-	private record ConnectionDataFetcher(DataFetcher<?> delegate, ConnectionAdapter adapter) implements DataFetcher<Object> {
+	record ConnectionDataFetcher(DataFetcher<?> delegate, ConnectionAdapter adapter) implements DataFetcher<Object> {
 
 		private static final Connection<?> EMPTY_CONNECTION =
 				new DefaultConnection<>(Collections.emptyList(), new DefaultPageInfo(null, null, false, false));
 
 
-		private ConnectionDataFetcher {
+		ConnectionDataFetcher {
 			Assert.notNull(delegate, "DataFetcher delegate is required");
 			Assert.notNull(adapter, "ConnectionAdapter is required");
 		}

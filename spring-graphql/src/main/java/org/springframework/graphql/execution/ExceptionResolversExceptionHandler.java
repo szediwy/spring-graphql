@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2024 the original author or authors.
+ * Copyright 2002-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ class ExceptionResolversExceptionHandler implements DataFetcherExceptionHandler 
 
 		Throwable exception = unwrapException(handlerParameters);
 		DataFetchingEnvironment env = handlerParameters.getDataFetchingEnvironment();
-		ContextSnapshot snapshot = ContextSnapshotFactoryHelper.captureFrom(env.getGraphQlContext());
+		ContextSnapshot snapshot = ContextPropagationHelper.captureFrom(env.getGraphQlContext());
 		try {
 			return Flux.fromIterable(this.resolvers)
 					.flatMap((resolver) -> resolver.resolveException(exception, env))
@@ -88,7 +88,10 @@ class ExceptionResolversExceptionHandler implements DataFetcherExceptionHandler 
 
 	private Throwable unwrapException(DataFetcherExceptionHandlerParameters params) {
 		Throwable ex = params.getException();
-		return ((ex instanceof CompletionException) ? ex.getCause() : ex);
+		if (ex instanceof CompletionException completionException) {
+			return (completionException.getCause() != null) ? completionException.getCause() : completionException;
+		}
+		return ex;
 	}
 
 	private void logResolvedException(Throwable ex, DataFetcherExceptionHandlerResult result) {
